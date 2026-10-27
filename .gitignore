@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+/etc/
+*.log
+.DS_Store
+.idea/
+.vscode/
