@@ -54,12 +54,7 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
         <label for="admin-download">URL de descarga (HTTPS)</label>
         <input id="admin-download" name="download_url" type="url" maxlength="2000" value="<?= e((string)($formContent['download_url'] ?? '')) ?>">
 
-        <label for="admin-type">Tipo de contenido</label>
-        <select id="admin-type" name="content_type">
-            <?php foreach (['download' => 'Descarga', 'skin' => 'Skin', 'holographic' => 'Holographic'] as $value => $label): ?>
-                <option value="<?= e($value) ?>" <?= ($formContent['content_type'] ?? 'download') === $value ? 'selected' : '' ?>><?= e($label) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <input type="hidden" name="content_type" value="download">
 
         <label for="admin-platform">Plataforma</label>
         <select id="admin-platform" name="platform">

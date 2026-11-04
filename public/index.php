@@ -313,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $contentDescription = trim((string)($_POST['description'] ?? ''));
         $imageUrl = trim((string)($_POST['image_url'] ?? ''));
         $downloadUrl = trim((string)($_POST['download_url'] ?? ''));
-        $contentType = (string)($_POST['content_type'] ?? 'download');
+        $contentType = 'download';
         $platform = (string)($_POST['platform'] ?? 'both');
         $status = (string)($_POST['status'] ?? 'draft');
         $featured = isset($_POST['is_featured']) ? 1 : 0;
@@ -328,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($contentSlug === '' || strlen($contentSlug) > 200) {
             $errors[] = 'El slug debe contener letras, números y guiones.';
         }
-        if (!in_array($contentType, ['download', 'skin', 'holographic'], true)) {
+        if ($contentType !== 'download') {
             $errors[] = 'El tipo de contenido no es válido.';
         }
         if (!in_array($platform, ['java', 'bedrock', 'both', 'other'], true)) {
@@ -765,7 +765,7 @@ if ($pdo) {
         );
 
         if (
-            ($page === 'home' || $categoryId !== null)
+            ($page === 'home' || $page === 'explorer' || $categoryId !== null)
             && $hasCatalogFilters
         ) {
             $catalogCategoryId = $filterCategory ?? $categoryId;
@@ -774,7 +774,8 @@ if ($pdo) {
                 $searchQuery,
                 $catalogCategoryId,
                 $filterPlatform,
-                $filterVersion
+                $filterVersion,
+                $page === 'explorer'
             );
 
             $totalPages = max(
@@ -791,7 +792,34 @@ if ($pdo) {
                 $filterPlatform,
                 $filterVersion,
                 $itemsPerPage,
-                $offset
+                $offset,
+                $page === 'explorer'
+            );
+        } elseif ($page === 'explorer') {
+            $totalContents = $contentRepository->countSearchPublished(
+                '',
+                null,
+                '',
+                '',
+                true
+            );
+
+            $totalPages = max(
+                1,
+                (int) ceil($totalContents / $itemsPerPage)
+            );
+
+            $currentPage = min($currentPage, $totalPages);
+            $offset = ($currentPage - 1) * $itemsPerPage;
+
+            $contents = $contentRepository->searchPublished(
+                '',
+                null,
+                '',
+                '',
+                $itemsPerPage,
+                $offset,
+                true
             );
         } elseif ($page === 'home') {
             $contents = $contentRepository->findPublishedHome();
@@ -883,7 +911,7 @@ if ($pdo) {
         <div class="hero-content">
             <span class="eyebrow"><span class="status-dot"></span> TU UNIVERSO DE MINECRAFT</span>
             <h1>Todo el contenido<br>de Minecraft en <span>un solo lugar.</span></h1>
-            <p>Descubrí mods, mapas, shaders, skins y mucho más. Todo organizado para que encuentres tu próxima aventura.</p>
+            <p>Descubrí mods, mapas, texturas, skins, armor trims y construcciones para Minecraft.</p>
             <div class="hero-actions">
                 <a class="button button-primary button-large" href="#contenido">Explorar contenido <span>↘</span></a>
                 <a class="button button-outline button-large" href="/?page=mods">Ver mods</a>
@@ -912,6 +940,28 @@ if ($pdo) {
             <div><span class="eyebrow">SELECCIÓN FOXCRAFT</span><h2>Contenido <span>reciente</span></h2></div>
             <a class="text-link" href="/?page=mods">Explorar secciones ↗</a>
         </div>
+        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
+        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
+    </section>
+
+<?php elseif ($page === 'explorer'): ?>
+    <section class="page-banner">
+        <span class="eyebrow">BIBLIOTECA FOXCRAFT</span>
+        <h1>Explorá <span>Minecraft.</span></h1>
+        <p>Descubrí todos los mods, mapas y resource packs disponibles en FoxCraft.</p>
+    </section>
+
+    <?php require '/var/www/foxcraft/app/Views/Content/search.php'; ?>
+
+    <section class="section listing-section">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">CATÁLOGO COMPLETO</span>
+                <h2>Todo el <span>contenido</span></h2>
+            </div>
+            <span class="section-count"><?= $totalContents ?> publicaciones</span>
+        </div>
+
         <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
         <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
     </section>

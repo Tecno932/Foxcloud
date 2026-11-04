@@ -18,7 +18,7 @@ final class ContentRepository
         $limit = max(1, min($limit, 100));
 
         $query = $this->pdo->query(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url,
+            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
              FROM contents c
@@ -40,7 +40,7 @@ final class ContentRepository
         $offset = max(0, $offset);
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url,
+            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
             FROM contents c
@@ -79,7 +79,8 @@ final class ContentRepository
         string $platform = '',
         string $version = '',
         int $limit = 12,
-        int $offset = 0
+        int $offset = 0,
+        bool $explorerOnly = false
     ): array {
         $limit = max(1, min($limit, 100));
         $offset = max(0, $offset);
@@ -88,6 +89,10 @@ final class ContentRepository
             "c.status = 'published'",
             "cat.is_active = 1"
         ];
+
+        if ($explorerOnly) {
+            $conditions[] = "cat.slug IN ('mods', 'maps', 'resource-packs')";
+        }
 
         $params = [];
 
@@ -116,7 +121,7 @@ final class ContentRepository
         $where = implode(' AND ', $conditions);
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url,
+            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
              FROM contents c
@@ -135,12 +140,17 @@ final class ContentRepository
         string $search = '',
         ?int $categoryId = null,
         string $platform = '',
-        string $version = ''
+        string $version = '',
+        bool $explorerOnly = false
     ): int {
         $conditions = [
             "c.status = 'published'",
             "cat.is_active = 1"
         ];
+
+        if ($explorerOnly) {
+            $conditions[] = "cat.slug IN ('mods', 'maps', 'resource-packs')";
+        }
 
         $params = [];
 
@@ -249,7 +259,7 @@ final class ContentRepository
         $limit = max(1, min($limit, 100));
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url,
+            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name,
                     cat.slug AS category_slug

@@ -1,4 +1,4 @@
-<section class="section search-section">
+<section class="section search-section<?= $page === 'explorer' ? ' explorer-search' : '' ?>">
     <form method="GET" action="/" class="search-form">
         <input type="hidden" name="page" value="<?= e($page) ?>">
 
@@ -19,10 +19,16 @@
             <select id="catalog-category" name="category">
                 <option value="">Todas las categorías</option>
                 <?php foreach ($categories as $category): ?>
-                    <option
-                        value="<?= (int)$category['id'] ?>"
-                        <?= $currentCategory === (int)$category['id'] ? 'selected' : '' ?>
-                    >
+                    <?php
+                    if (
+                        $page === 'explorer'
+                        && !in_array($category['slug'], ['mods', 'maps', 'resource-packs'], true)
+                    ) {
+                        continue;
+                    }
+                    ?>
+                    <option value="<?= (int)$category['id'] ?>"
+                        <?= $currentCategory === (int)$category['id'] ? 'selected' : '' ?>>
                         <?= e($category['name']) ?>
                     </option>
                 <?php endforeach; ?>

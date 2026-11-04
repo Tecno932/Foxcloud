@@ -10,9 +10,9 @@
                 <img loading="lazy" src="/assets/icons/categories/<?= e(match ($category['slug']) {
                     'mods' => 'mods.png',
                     'maps' => 'maps.png',
-                    'shaders' => 'shaders.png',
-                    'skins' => 'skins.png',
-                    'schematics-java', 'schematics-bedrock' => 'schematics.png',
+                    'resource-packs' => 'shaders.png',
+                    'skins', 'armor-trims' => 'skins.png',
+                    'schematics' => 'schematics.png',
                     default => 'mods.png',
                 }) ?>" alt="">
             </span>

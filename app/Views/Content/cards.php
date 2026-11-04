@@ -1,3 +1,4 @@
+
 <?php
 if (!$contents) {
     echo '<div class="empty-state"><span class="empty-icon">✦</span>';
@@ -7,36 +8,67 @@ if (!$contents) {
 }
 
 echo '<div class="content-grid">';
+
 foreach ($contents as $item) {
     $image = trim((string)($item['image_url'] ?? ''));
     $validImage = $image !== '' &&
         (str_starts_with($image, '/') || str_starts_with($image, 'https://'));
 
-    echo '<article class="content-card">';
     $detailUrl = '/' . rawurlencode((string)$item['category_slug']) . '/' .
         (int)$item['id'] . '/' . rawurlencode((string)$item['slug']);
-    echo '<a class="content-image" href="' . e($detailUrl) . '">';
+
+    $platform = ucfirst((string)($item['platform'] ?? 'other'));
+    $category = (string)($item['category_name'] ?? 'Contenido');
+
+    echo '<article class="content-card">';
+
+    echo '<a class="content-card-link" href="' . e($detailUrl) . '">';
+
+    echo '<div class="content-image">';
+
     if ($validImage) {
-        echo '<img loading="lazy" src="' . e($image) . '" alt="' . e((string)$item['title']) . '">';
+        echo '<img class="content-image-background" loading="lazy" src="' . e($image) . '" alt="" aria-hidden="true">';
+        echo '<img class="content-image-main" loading="lazy" src="' . e($image) . '" alt="' . e((string)$item['title']) . '">';
     } else {
         echo '<span class="image-placeholder">FOXCRAFT</span>';
     }
-    echo '</a><div class="content-info">';
-    echo '<span class="content-category">' . e((string)$item['category_name']) . '</span>';
-    echo '<h3><a href="' . e($detailUrl) . '">' . e((string)$item['title']) . '</a></h3>';
+
+    echo '<div class="content-image-overlay">';
+
+    echo '<div class="content-image-labels">';
+    echo '<span>' . e($platform) . '</span>';
+    echo '<span>' . e($category) . '</span>';
+    echo '</div>';
+
+    echo '<span class="content-image-downloads">';
+    echo '<span aria-hidden="true">↓</span> ';
+    echo '<span>' . number_format((int)$item['downloads_count']) . '</span>';
+    echo '</span>';
+
+    echo '</div>';
+
+    echo '</div>';
+
+    echo '<div class="content-info">';
+
+    echo '<h3>' . e((string)$item['title']) . '</h3>';
+
     echo '<p>' . e(mb_strimwidth((string)$item['description'], 0, 115, '…', 'UTF-8')) . '</p>';
-    echo '<div class="content-meta"><span>↓ ' . number_format((int)$item['downloads_count']) . '</span>';
-    echo '<span>♥ ' . number_format((int)$item['likes_count']) . '</span></div>';
+
+    echo '</div>';
+
+    echo '</a>';
 
     if (!empty($showFavoriteActions)) {
-        echo '<form method="post" action="/?page=favorites" class="inline-form">';
+        echo '<form method="post" action="/?page=favorites" class="inline-form content-card-favorite">';
         echo '<input type="hidden" name="csrf_token" value="' . e((string)$_SESSION['csrf_token']) . '">';
         echo '<input type="hidden" name="content_id" value="' . (int)$item['id'] . '">';
         echo '<input type="hidden" name="favorite_action" value="remove">';
-        echo '<button class="button button-quiet" type="submit">♥ Quitar de favoritos</button>';
+        echo '<button class="button button-quiet" type="submit" aria-label="Quitar de favoritos" title="Quitar de favoritos">♥</button>';
         echo '</form>';
     }
 
-    echo '</div></article>';
+    echo '</article>';
 }
+
 echo '</div>';

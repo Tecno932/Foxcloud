@@ -19,12 +19,12 @@
 
         <nav class="main-nav" id="main-nav" aria-label="Navegación principal">
             <a href="/" class="<?= $page === 'home' ? 'active' : '' ?>">Inicio</a>
-            <a href="#categorias">Explorar</a>
+            <a href="/?page=explorer" class="<?= $page === 'explorer' ? 'active' : '' ?>">Explorar</a>
             <a href="/?page=mods">Mods</a>
             <a href="/?page=maps">Mapas</a>
-            <a href="/?page=texture-packs">Texture</a>
-            <a href="/?page=skins">Skin</a>
-            <a href="/?page=holographic">Holographic</a>
+            <a href="/?page=resource-packs">Textures</a>
+            <a href="/?page=skins">Skins</a>
+            <a href="/?page=schematics">Schematics</a>
 
             <div class="mobile-account">
                 <?php if (!empty($_SESSION['user_id'])): ?>
