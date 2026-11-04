@@ -242,35 +242,251 @@ if (cookieConsent) {
     });
 }
 
-// Vista previa del avatar
+
+ // Recortador de avatar
 const avatarInput = document.querySelector('#avatar');
 const avatarPreview = document.querySelector('#avatar-preview');
 const avatarPlaceholder = document.querySelector('#avatar-placeholder');
 
-if (avatarInput && avatarPreview && avatarPlaceholder) {
-    let currentPreviewUrl = null;
+const cropper = document.querySelector('#avatar-cropper');
+const cropperImage = document.querySelector('#avatar-cropper-image');
+const cropperStage = document.querySelector('#avatar-cropper-stage');
+const cropperWorkspace = document.querySelector('#avatar-cropper-workspace');
+const cropperLoading = document.querySelector('#avatar-cropper-loading');
+const cropperClose = document.querySelector('#avatar-cropper-close');
+const cropperCancel = document.querySelector('#avatar-cropper-cancel');
+const cropperConfirm = document.querySelector('#avatar-cropper-confirm');
+const cropperZoom = document.querySelector('#avatar-zoom');
+
+if (
+    avatarInput &&
+    avatarPreview &&
+    avatarPlaceholder &&
+    cropper &&
+    cropperImage &&
+    cropperStage &&
+    cropperWorkspace &&
+    cropperLoading &&
+    cropperConfirm &&
+    cropperZoom
+) {
+    let sourceUrl = null;
+    let previewUrl = null;
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let baseScale = 1;
+    let dragging = false;
+    let lastPointerX = 0;
+    let lastPointerY = 0;
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+    function updateCropImage() {
+        const stageWidth = cropperStage.clientWidth;
+        const stageHeight = cropperStage.clientHeight;
+
+        const width = cropperImage.naturalWidth * baseScale * scale;
+        const height = cropperImage.naturalHeight * baseScale * scale;
+
+        const maxOffsetX = Math.max(0, (width - stageWidth) / 2);
+        const maxOffsetY = Math.max(0, (height - stageHeight) / 2);
+
+        offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, offsetX));
+        offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, offsetY));
+
+        cropperImage.style.width = `${width}px`;
+        cropperImage.style.height = `${height}px`;
+        cropperImage.style.left = `${(stageWidth - width) / 2 + offsetX}px`;
+        cropperImage.style.top = `${(stageHeight - height) / 2 + offsetY}px`;
+    }
+
+    function resetCropper() {
+        cropper.hidden = true;
+        cropperImage.removeAttribute('src');
+        cropperWorkspace.hidden = true;
+        cropperLoading.hidden = true;
+        cropperConfirm.disabled = false;
+
+        if (sourceUrl) {
+            URL.revokeObjectURL(sourceUrl);
+            sourceUrl = null;
+        }
+
+        avatarInput.value = '';
+    }
+
+    function openCropper(file) {
+        cropper.hidden = false;
+        cropperLoading.hidden = false;
+        cropperWorkspace.hidden = true;
+        cropperConfirm.disabled = true;
+
+        sourceUrl = URL.createObjectURL(file);
+        cropperImage.src = sourceUrl;
+
+        cropperImage.decode().then(() => {
+            const stageWidth = cropperStage.clientWidth;
+
+            if (!stageWidth || !cropperImage.naturalWidth) {
+                throw new Error('No se pudo calcular el recorte.');
+            }
+
+            baseScale = Math.max(
+                stageWidth / cropperImage.naturalWidth,
+                stageWidth / cropperImage.naturalHeight
+            );
+
+            scale = 1;
+            offsetX = 0;
+            offsetY = 0;
+            cropperZoom.value = '1';
+
+            updateCropImage();
+
+            cropperLoading.hidden = true;
+            cropperWorkspace.hidden = false;
+            cropperConfirm.disabled = false;
+        }).catch(() => {
+            resetCropper();
+            alert('No se pudo cargar la imagen. Probá con otro archivo.');
+        });
+    }
 
     avatarInput.addEventListener('change', () => {
         const file = avatarInput.files?.[0];
 
-        if (!file) {
-            return;
-        }
-
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!file) return;
 
         if (!allowedTypes.includes(file.type) || file.size > 2 * 1024 * 1024) {
             avatarInput.value = '';
+            alert('Seleccioná una imagen JPG, PNG o WebP de hasta 2 MB.');
             return;
         }
 
-        if (currentPreviewUrl) {
-            URL.revokeObjectURL(currentPreviewUrl);
+        openCropper(file);
+    });
+
+    cropperZoom.addEventListener('input', () => {
+        scale = Number(cropperZoom.value);
+        updateCropImage();
+    });
+
+    cropperStage.addEventListener('pointerdown', (event) => {
+        if (cropperWorkspace.hidden) return;
+
+        dragging = true;
+        lastPointerX = event.clientX;
+        lastPointerY = event.clientY;
+        cropperStage.setPointerCapture(event.pointerId);
+    });
+
+    cropperStage.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+
+        offsetX += event.clientX - lastPointerX;
+        offsetY += event.clientY - lastPointerY;
+
+        lastPointerX = event.clientX;
+        lastPointerY = event.clientY;
+
+        updateCropImage();
+    });
+
+    cropperStage.addEventListener('pointerup', () => {
+        dragging = false;
+    });
+
+    cropperStage.addEventListener('pointercancel', () => {
+        dragging = false;
+    });
+
+    cropperConfirm.addEventListener('click', () => {
+        if (!cropperImage.naturalWidth || cropperWorkspace.hidden) return;
+
+        cropperConfirm.disabled = true;
+        cropperConfirm.textContent = 'Procesando...';
+
+        const stageWidth = cropperStage.clientWidth;
+        const renderedWidth = cropperImage.clientWidth;
+        const renderedHeight = cropperImage.clientHeight;
+        const imageLeft = Number.parseFloat(cropperImage.style.left);
+        const imageTop = Number.parseFloat(cropperImage.style.top);
+
+        const sourceX = Math.max(0, (0 - imageLeft) / renderedWidth * cropperImage.naturalWidth);
+        const sourceY = Math.max(0, (0 - imageTop) / renderedHeight * cropperImage.naturalHeight);
+        const sourceWidth = Math.min(
+            stageWidth / renderedWidth * cropperImage.naturalWidth,
+            cropperImage.naturalWidth - sourceX
+        );
+        const sourceHeight = Math.min(
+            stageWidth / renderedHeight * cropperImage.naturalHeight,
+            cropperImage.naturalHeight - sourceY
+        );
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+
+        const context = canvas.getContext('2d');
+
+        if (!context) {
+            cropperConfirm.disabled = false;
+            cropperConfirm.textContent = 'Confirmar recorte';
+            alert('No se pudo procesar la imagen.');
+            return;
         }
 
-        currentPreviewUrl = URL.createObjectURL(file);
-        avatarPreview.src = currentPreviewUrl;
-        avatarPreview.hidden = false;
-        avatarPlaceholder.hidden = true;
+        context.drawImage(
+            cropperImage,
+            sourceX,
+            sourceY,
+            sourceWidth,
+            sourceHeight,
+            0,
+            0,
+            512,
+            512
+        );
+
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                cropperConfirm.disabled = false;
+                cropperConfirm.textContent = 'Confirmar recorte';
+                alert('No se pudo generar la imagen recortada.');
+                return;
+            }
+
+            const croppedFile = new File(
+                [blob],
+                'avatar.jpg',
+                { type: 'image/jpeg' }
+            );
+
+            const transfer = new DataTransfer();
+            transfer.items.add(croppedFile);
+            avatarInput.files = transfer.files;
+
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+
+            previewUrl = URL.createObjectURL(blob);
+            avatarPreview.src = previewUrl;
+            avatarPreview.hidden = false;
+            avatarPlaceholder.hidden = true;
+
+            cropperConfirm.textContent = 'Confirmar recorte';
+            resetCropper();
+        }, 'image/jpeg', 0.90);
+    });
+
+    cropperClose?.addEventListener('click', resetCropper);
+    cropperCancel?.addEventListener('click', resetCropper);
+
+    cropper.addEventListener('click', (event) => {
+        if (event.target === cropper) {
+            resetCropper();
+        }
     });
 }

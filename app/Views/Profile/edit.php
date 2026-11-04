@@ -69,6 +69,89 @@
                         >
 
                         <small>JPG, PNG o WebP. Máximo 2 MB.</small>
+
+                            <div
+                                class="avatar-cropper"
+                                id="avatar-cropper"
+                                hidden
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="avatar-cropper-title"
+                            >
+                                <div class="avatar-cropper-panel">
+
+                                    <header class="avatar-cropper-header">
+                                        <div>
+                                            <span class="profile-edit-section-label">FOXCRAFT / AVATAR</span>
+                                            <h2 id="avatar-cropper-title">Ajustar fotografía</h2>
+                                            <p>Mové y acercá la imagen para elegir tu encuadre.</p>
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            class="avatar-cropper-close"
+                                            id="avatar-cropper-close"
+                                            aria-label="Cerrar editor"
+                                        >×</button>
+                                    </header>
+
+                                    <div class="avatar-cropper-loading" id="avatar-cropper-loading" hidden>
+                                        <span class="avatar-cropper-spinner"></span>
+                                        <p>Cargando imagen...</p>
+                                    </div>
+
+                                    <div class="avatar-cropper-workspace" id="avatar-cropper-workspace" hidden>
+                                        <div class="avatar-cropper-stage" id="avatar-cropper-stage">
+                                            <img
+                                                id="avatar-cropper-image"
+                                                src=""
+                                                alt="Imagen para recortar"
+                                                draggable="false"
+                                            >
+                                            <div class="avatar-cropper-mask">
+                                                <div class="avatar-cropper-circle"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="avatar-cropper-controls">
+                                        <label for="avatar-zoom">Zoom</label>
+
+                                        <div class="avatar-zoom-control">
+                                            <span>−</span>
+                                            <input
+                                                type="range"
+                                                id="avatar-zoom"
+                                                min="1"
+                                                max="3"
+                                                step="0.01"
+                                                value="1"
+                                            >
+                                            <span>+</span>
+                                        </div>
+
+                                        <small>Arrastrá la imagen para ajustar el encuadre.</small>
+                                    </div>
+
+                                    <footer class="avatar-cropper-actions">
+                                        <button
+                                            type="button"
+                                            class="button button-outline"
+                                            id="avatar-cropper-cancel"
+                                        >
+                                            Cancelar
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            class="button button-primary"
+                                            id="avatar-cropper-confirm"
+                                        >
+                                            Confirmar recorte
+                                        </button>
+                                    </footer>
+                                </div>
+                        </div>
                     </div>
 
                     <div class="profile-edit-tip">

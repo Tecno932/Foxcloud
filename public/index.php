@@ -505,7 +505,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (!is_writable($avatarDirectory)) {
                     $errors[] = 'El servidor no puede guardar imágenes actualmente.';
                 } else {
-                    $filename = bin2hex(random_bytes(24))
+                    $safeUsername = preg_replace(
+                        '/[^a-zA-Z0-9_-]/',
+                        '',
+                        (string)($_SESSION['username'] ?? 'user')
+                    );
+
+                    if ($safeUsername === '') {
+                        $safeUsername = 'user';
+                    }
+
+                    $filename = $safeUsername
+                        . '-'
+                        . bin2hex(random_bytes(8))
                         . '.'
                         . $allowedImages[$mimeType];
 
@@ -539,7 +551,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (
                     $newAvatarPath !== null
                     && str_starts_with($oldAvatarPath, '/uploads/avatars/')
-                    && preg_match('/\A[a-f0-9]{48}\.(jpg|png|webp)\z', basename($oldAvatarPath)) === 1
+                    && preg_match(
+                        '/\A(?:[a-zA-Z0-9_-]+-[a-f0-9]{16}|[a-f0-9]{48})\.(jpg|png|webp)\z/',
+                        basename($oldAvatarPath)
+                    )
                 ) {
                     $oldAvatarFile = $avatarDirectory . '/' . basename($oldAvatarPath);
 
