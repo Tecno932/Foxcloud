@@ -1,36 +1,57 @@
 <?php
+require_once '/var/www/foxcraft/app/Core/helpers.php';
 
+// Protección de sesiones
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+
+$isHttps = isset($_SERVER['HTTPS'])
+    && $_SERVER['HTTPS'] !== ''
+    && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $isHttps,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 
 session_start();
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('X-Frame-Options: DENY');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()');
 
-function e(string $value): string {
-    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-}
+$csp = "default-src 'self'; "
+    . "base-uri 'self'; "
+    . "object-src 'none'; "
+    . "frame-ancestors 'none'; "
+    . "form-action 'self'; "
+    . "script-src 'self' 'wasm-unsafe-eval' https://al5sm.com; "
+    . "style-src 'self'; "
+    . "img-src 'self' https://foxcraft-web1-249i.vercel.app; "
+    . "font-src 'self'; "
+    . "connect-src 'self' https://255md.com https://ay267.com http://ay267.com";
 
-$pages = [
-    'home' => ['Inicio', 'Todo el contenido de Minecraft en un solo lugar.'],
-    'mods' => ['Mods', 'Descubre nuevos mods y complementos.'],
-    'maps' => ['Mapas', 'Explora nuevos mundos y aventuras.'],
-    'shaders' => ['Shaders', 'Mejora el apartado visual de Minecraft.'],
-    'resource-packs' => ['Resource Packs', 'Personaliza tu experiencia.'],
-    'texture-packs' => ['Texture Packs', 'Nuevas texturas para tu mundo.'],
-    'ui-packs' => ['UI Packs', 'Personaliza la interfaz del juego.'],
-    'skins' => ['Skins', 'Encuentra tu próxima apariencia.'],
-    'armor-trims' => ['Armor Trims', 'Personaliza tus armaduras.'],
-    'banners' => ['Banners', 'Diseños para decorar tu mundo.'],
-    'schematics-java' => ['Schematics Java', 'Construcciones para Minecraft Java.'],
-    'schematics-bedrock' => ['Schematics Bedrock', 'Construcciones para Minecraft Bedrock.'],
-    'holographic' => ['Holographic', 'Modelos y texturas holográficas.'],
-    'login' => ['Iniciar sesión', 'Accede a tu cuenta FoxCraft.'],
-    'register' => ['Crear cuenta', 'Únete a la comunidad FoxCraft.'],
-    'profile' => ['Mi perfil', 'Tu cuenta FoxCraft.'],
-];
+header('Content-Security-Policy: ' . $csp);
+
+$pages = require '/var/www/foxcraft/app/Config/pages.php';
 
 $page = (string)($_GET['page'] ?? 'home');
+$routeContentId = 0;
+$routeSlug = '';
+$routeCategory = '';
+
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+if (preg_match('~^/([a-z0-9-]+)/([0-9]+)/([a-z0-9-]+)/?$~i', $requestPath, $routeMatch)) {
+    $routeCategory = strtolower($routeMatch[1]);
+    $routeContentId = (int)$routeMatch[2];
+    $routeSlug = $routeMatch[3];
+    $page = 'content-detail';
+}
+
 if (!isset($pages[$page])) {
     http_response_code(404);
     $page = 'home';
@@ -72,6 +93,98 @@ try {
     $dbError = true;
 }
 
+if ($page === 'prepare-download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $contentId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
+
+    if (!$contentId || $contentId < 1 || !$pdo) {
+        http_response_code($pdo ? 404 : 503);
+        exit('La descarga no está disponible.');
+    }
+
+    try {
+        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+
+        $downloadRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
+        $downloadUrl = $downloadRepository->findPublishedDownloadUrl($contentId);
+        $downloadParts = is_string($downloadUrl) ? parse_url($downloadUrl) : false;
+
+        if (
+            !$downloadUrl
+            || !filter_var($downloadUrl, FILTER_VALIDATE_URL)
+            || !is_array($downloadParts)
+            || strtolower((string)($downloadParts['scheme'] ?? '')) !== 'https'
+            || empty($downloadParts['host'])
+        ) {
+            http_response_code(404);
+            exit('La descarga no está disponible.');
+        }
+
+        $prepareDownloadId = $contentId;
+    } catch (Throwable $exception) {
+        error_log('FoxCraft prepare download: ' . $exception->getMessage());
+        http_response_code(500);
+        exit('No se pudo preparar la descarga.');
+    }
+}
+
+if ($page === 'download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    $contentId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
+
+    if (!$contentId || $contentId < 1 || !$pdo) {
+        http_response_code($pdo ? 404 : 503);
+        exit('La descarga no está disponible.');
+    }
+
+    try {
+        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+        $downloadRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
+        $downloadUrl = $downloadRepository->findPublishedDownloadUrl($contentId);
+        $downloadParts = is_string($downloadUrl) ? parse_url($downloadUrl) : false;
+
+        if (
+            !$downloadUrl
+            || !filter_var($downloadUrl, FILTER_VALIDATE_URL)
+            || !is_array($downloadParts)
+            || strtolower((string)($downloadParts['scheme'] ?? '')) !== 'https'
+            || empty($downloadParts['host'])
+        ) {
+            http_response_code(404);
+            exit('La descarga no está disponible.');
+        }
+
+        if (!$downloadRepository->incrementDownloads($contentId)) {
+            http_response_code(404);
+            exit('La descarga no está disponible.');
+        }
+
+        header('Location: ' . $downloadUrl, true, 302);
+        exit;
+    } catch (Throwable $exception) {
+        error_log('FoxCraft download: ' . $exception->getMessage());
+        http_response_code(500);
+        exit('No se pudo iniciar la descarga.');
+    }
+}
+
+$isAdmin = false;
+if ($pdo && !empty($_SESSION['user_id'])) {
+    try {
+        require_once '/var/www/foxcraft/app/Repositories/UserRepository.php';
+        $userRepository = new \FoxCraft\Repositories\UserRepository($pdo);
+        $isAdmin = $userRepository->isActiveAdmin((int)$_SESSION['user_id']);
+    } catch (Throwable $exception) {
+        error_log('FoxCraft admin authorization: ' . $exception->getMessage());
+    }
+}
+
+if ($page === 'admin' && !$isAdmin) {
+    if (empty($_SESSION['user_id'])) {
+        header('Location: /?page=login', true, 303);
+        exit;
+    }
+    http_response_code(403);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string)($_POST['csrf_token'] ?? '');
 
@@ -79,6 +192,376 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'El formulario venció. Recargá la página e intentá nuevamente.';
     } elseif (!$pdo) {
         $errors[] = 'El servicio no está disponible en este momento.';
+    } elseif ($page === 'favorites') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            exit;
+        }
+
+        $contentId = filter_var($_POST['content_id'] ?? null, FILTER_VALIDATE_INT);
+        $action = (string)($_POST['favorite_action'] ?? '');
+
+        if (!$contentId || $contentId < 1) {
+            $errors[] = 'La publicación seleccionada no es válida.';
+        } elseif (!in_array($action, ['add', 'remove'], true)) {
+            $errors[] = 'La acción de favoritos no es válida.';
+        } else {
+            try {
+                require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+                $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
+
+                if ($action === 'add') {
+                    if ($favoriteRepository->isFavorite((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Esta publicación ya está en tus favoritos.';
+                    } elseif ($favoriteRepository->add((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Publicación agregada a tus favoritos.';
+                    } else {
+                        $errors[] = 'No se pudo agregar la publicación. Puede que ya no esté disponible.';
+                    }
+                } else {
+                    if ($favoriteRepository->remove((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Publicación eliminada de tus favoritos.';
+                    } else {
+                        $_SESSION['flash'] = 'La publicación ya no estaba en tus favoritos.';
+                    }
+                }
+
+                if (!$errors) {
+                    $returnTo = (string)($_POST['return_to'] ?? '');
+
+                    if (
+                        $returnTo === ''
+                        || !str_starts_with($returnTo, '/')
+                        || str_starts_with($returnTo, '//')
+                        || str_contains($returnTo, "\r")
+                        || str_contains($returnTo, "\n")
+                        || str_contains($returnTo, '\\')
+                    ) {
+                        $returnTo = '/?page=favorites';
+                    }
+
+                    header('Location: ' . $returnTo, true, 303);
+                    exit;
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft favorites action: ' . $exception->getMessage());
+                $errors[] = 'No se pudo actualizar tu lista de favoritos.';
+            }
+        }
+    } elseif ($page === 'likes') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            exit;
+        }
+
+        $contentId = filter_var($_POST['content_id'] ?? null, FILTER_VALIDATE_INT);
+        $action = (string)($_POST['like_action'] ?? '');
+
+        if (!$contentId || $contentId < 1) {
+            $errors[] = 'La publicación seleccionada no es válida.';
+        } elseif (!in_array($action, ['add', 'remove'], true)) {
+            $errors[] = 'La acción de Me gusta no es válida.';
+        } else {
+            try {
+                require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+                $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+
+                if ($action === 'add') {
+                    if ($likeRepository->isLiked((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Ya te gusta esta publicación.';
+                    } elseif ($likeRepository->add((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Marcaste que te gusta esta publicación.';
+                    } else {
+                        $errors[] = 'No se pudo registrar tu Me gusta. Puede que la publicación ya no esté disponible.';
+                    }
+                } else {
+                    if ($likeRepository->remove((int)$_SESSION['user_id'], $contentId)) {
+                        $_SESSION['flash'] = 'Quitaste tu Me gusta de esta publicación.';
+                    } else {
+                        $_SESSION['flash'] = 'No habías marcado que te gusta esta publicación.';
+                    }
+                }
+
+                if (!$errors) {
+                    $returnTo = (string)($_POST['return_to'] ?? '');
+                    if (
+                        $returnTo === ''
+                        || !str_starts_with($returnTo, '/')
+                        || str_starts_with($returnTo, '//')
+                        || str_contains($returnTo, "\r")
+                        || str_contains($returnTo, "\n")
+                        || str_contains($returnTo, '\\')
+                    ) {
+                        $returnTo = '/';
+                    }
+
+                    header('Location: ' . $returnTo, true, 303);
+                    exit;
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft likes action: ' . $exception->getMessage());
+                $errors[] = 'No se pudo actualizar tu Me gusta.';
+            }
+        }
+    } elseif ($page === 'admin' && $isAdmin) {
+        $contentId = filter_var($_POST['content_id'] ?? '0', FILTER_VALIDATE_INT);
+        $contentId = $contentId && $contentId > 0 ? $contentId : 0;
+        $categoryIdInput = filter_var($_POST['category_id'] ?? '', FILTER_VALIDATE_INT);
+        $contentTitle = trim((string)($_POST['title'] ?? ''));
+        $contentSlug = strtolower(trim((string)($_POST['slug'] ?? '')));
+        $contentSlug = trim((string)preg_replace('/[^a-z0-9]+/', '-', $contentSlug), '-');
+        $contentDescription = trim((string)($_POST['description'] ?? ''));
+        $imageUrl = trim((string)($_POST['image_url'] ?? ''));
+        $downloadUrl = trim((string)($_POST['download_url'] ?? ''));
+        $contentType = (string)($_POST['content_type'] ?? 'download');
+        $platform = (string)($_POST['platform'] ?? 'both');
+        $status = (string)($_POST['status'] ?? 'draft');
+        $featured = isset($_POST['is_featured']) ? 1 : 0;
+        $versionInput = trim((string)($_POST['game_versions'] ?? ''));
+
+        if (!$categoryIdInput || $categoryIdInput < 1) {
+            $errors[] = 'Seleccioná una categoría válida.';
+        }
+        if ($contentTitle === '' || mb_strlen($contentTitle) > 180) {
+            $errors[] = 'El título es obligatorio y no puede superar los 180 caracteres.';
+        }
+        if ($contentSlug === '' || strlen($contentSlug) > 200) {
+            $errors[] = 'El slug debe contener letras, números y guiones.';
+        }
+        if (!in_array($contentType, ['download', 'skin', 'holographic'], true)) {
+            $errors[] = 'El tipo de contenido no es válido.';
+        }
+        if (!in_array($platform, ['java', 'bedrock', 'both', 'other'], true)) {
+            $errors[] = 'La plataforma seleccionada no es válida.';
+        }
+        if (!in_array($status, ['draft', 'published', 'archived'], true)) {
+            $errors[] = 'El estado seleccionado no es válido.';
+        }
+
+        foreach (['image_url' => $imageUrl, 'download_url' => $downloadUrl] as $field => $url) {
+            if ($url === '') {
+                continue;
+            }
+
+            $parts = parse_url($url);
+            $localImage = $field === 'image_url'
+                && str_starts_with($url, '/')
+                && !str_starts_with($url, '//')
+                && !str_contains($url, '\\');
+
+            $httpsUrl = filter_var($url, FILTER_VALIDATE_URL)
+                && is_array($parts)
+                && strtolower((string)($parts['scheme'] ?? '')) === 'https'
+                && !empty($parts['host']);
+
+            $isImageOptimizer = $field === 'download_url'
+                && is_array($parts)
+                && strtolower((string)($parts['path'] ?? '')) === '/_next/image';
+
+            if ($isImageOptimizer) {
+                $errors[] = 'La descarga debe apuntar al archivo descargable, no al optimizador de imágenes.';
+            } elseif (!$localImage && !$httpsUrl) {
+                $errors[] = $field === 'image_url'
+                    ? 'La imagen debe usar una ruta local o una URL HTTPS.'
+                    : 'La descarga debe usar una URL HTTPS.';
+            }
+        }
+
+        $versions = array_values(array_unique(array_filter(
+            array_map('trim', explode(',', $versionInput)),
+            static fn($value) => $value !== ''
+        )));
+        $versionsJson = json_encode($versions, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+        if (!$errors) {
+            try {
+                require_once '/var/www/foxcraft/app/Repositories/CategoryRepository.php';
+                $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
+
+                if (!$categoryRepository->isActiveById((int) $categoryIdInput)) {
+                    $errors[] = 'La categoría no existe o está desactivada.';
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft admin category validation: ' . $exception->getMessage());
+                $errors[] = 'No se pudo validar la categoría.';
+            }
+        }
+
+        if (!$errors) {
+            try {
+                require_once '/var/www/foxcraft/app/Repositories/AdminContentRepository.php';
+                $adminContentRepository = new \FoxCraft\Repositories\AdminContentRepository($pdo);
+
+                $adminContentRepository->save(
+                    $contentId,
+                    (int) $categoryIdInput,
+                    (int) $_SESSION['user_id'],
+                    $contentTitle,
+                    $contentSlug,
+                    $contentDescription,
+                    $imageUrl !== '' ? $imageUrl : null,
+                    $downloadUrl !== '' ? $downloadUrl : null,
+                    $contentType,
+                    $platform,
+                    $versionsJson,
+                    $featured,
+                    $status
+                );
+
+                $_SESSION['flash'] = $contentId > 0
+                    ? 'Publicación actualizada correctamente.'
+                    : 'Publicación creada correctamente.';
+                header('Location: /?page=admin', true, 303);
+                exit;
+            } catch (Throwable $exception) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('FoxCraft admin save: ' . $exception->getMessage());
+                $errors[] = 'No se pudo guardar. Revisá que el slug no esté repetido dentro de la categoría.';
+            }
+        }
+
+    } elseif ($page === 'edit-profile') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            exit;
+        }
+
+        $userId = (int) $_SESSION['user_id'];
+        $displayName = trim((string)($_POST['display_name'] ?? ''));
+        $bio = trim((string)($_POST['bio'] ?? ''));
+        $websiteUrl = trim((string)($_POST['website_url'] ?? ''));
+
+        $newAvatarPath = null;
+        $oldAvatarPath = null;
+        $avatarDirectory = '/var/www/foxcraft/public/uploads/avatars';
+
+        if (mb_strlen($displayName) > 60) {
+            $errors[] = 'El nombre visible no puede superar los 60 caracteres.';
+        }
+
+        if (mb_strlen($bio) > 500) {
+            $errors[] = 'La biografía no puede superar los 500 caracteres.';
+        }
+
+        if ($websiteUrl !== '') {
+            $parts = parse_url($websiteUrl);
+
+            if (
+                !filter_var($websiteUrl, FILTER_VALIDATE_URL)
+                || !is_array($parts)
+                || strtolower((string)($parts['scheme'] ?? '')) !== 'https'
+                || empty($parts['host'])
+            ) {
+                $errors[] = 'El sitio web debe ser una URL válida que use HTTPS.';
+            }
+        }
+
+        $avatar = $_FILES['avatar'] ?? null;
+
+        if (is_array($avatar) && ($avatar['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $uploadError = (int)($avatar['error'] ?? UPLOAD_ERR_NO_FILE);
+
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                $errors[] = match ($uploadError) {
+                    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'La imagen supera el tamaño máximo permitido.',
+                    UPLOAD_ERR_PARTIAL => 'La imagen no se recibió completa.',
+                    UPLOAD_ERR_NO_TMP_DIR => 'No está disponible la carpeta temporal de PHP.',
+                    UPLOAD_ERR_CANT_WRITE => 'No se pudo escribir el archivo subido.',
+                    default => 'No se pudo recibir la imagen.',
+                };
+            } elseif (
+                !isset($avatar['tmp_name'], $avatar['size'])
+                || !is_uploaded_file((string)$avatar['tmp_name'])
+                || (int)$avatar['size'] <= 0
+                || (int)$avatar['size'] > 2 * 1024 * 1024
+            ) {
+                $errors[] = 'La imagen debe pesar como máximo 2 MB.';
+            } else {
+                $imageInfo = @getimagesize((string)$avatar['tmp_name']);
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $mimeType = $finfo->file((string)$avatar['tmp_name']);
+
+                $allowedImages = [
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                    'image/webp' => 'webp',
+                ];
+
+                if (
+                    !is_array($imageInfo)
+                    || !isset($allowedImages[$mimeType])
+                    || ($imageInfo['mime'] ?? '') !== $mimeType
+                ) {
+                    $errors[] = 'La imagen debe ser JPG, PNG o WebP válida.';
+                } elseif (
+                    $imageInfo[0] < 1
+                    || $imageInfo[1] < 1
+                    || $imageInfo[0] > 2048
+                    || $imageInfo[1] > 2048
+                ) {
+                    $errors[] = 'La imagen no puede superar los 2048 × 2048 píxeles.';
+                } elseif (!is_writable($avatarDirectory)) {
+                    $errors[] = 'El servidor no puede guardar imágenes actualmente.';
+                } else {
+                    $filename = bin2hex(random_bytes(24))
+                        . '.'
+                        . $allowedImages[$mimeType];
+
+                    $destination = $avatarDirectory . '/' . $filename;
+
+                    if (!move_uploaded_file((string)$avatar['tmp_name'], $destination)) {
+                        $errors[] = 'No se pudo guardar la imagen.';
+                    } else {
+                        $newAvatarPath = '/uploads/avatars/' . $filename;
+                    }
+                }
+            }
+        }
+
+        if (!$errors) {
+            try {
+                require_once '/var/www/foxcraft/app/Repositories/ProfileRepository.php';
+
+                $profileRepository = new \FoxCraft\Repositories\ProfileRepository($pdo);
+                $currentProfile = $profileRepository->findByUserId($userId);
+                $oldAvatarPath = trim((string)($currentProfile['avatar_path'] ?? ''));
+
+                $profileRepository->save(
+                    $userId,
+                    $displayName,
+                    $bio,
+                    $websiteUrl !== '' ? $websiteUrl : null,
+                    $newAvatarPath
+                );
+
+                if (
+                    $newAvatarPath !== null
+                    && str_starts_with($oldAvatarPath, '/uploads/avatars/')
+                    && preg_match('/\A[a-f0-9]{48}\.(jpg|png|webp)\z', basename($oldAvatarPath)) === 1
+                ) {
+                    $oldAvatarFile = $avatarDirectory . '/' . basename($oldAvatarPath);
+
+                    if (is_file($oldAvatarFile)) {
+                        @unlink($oldAvatarFile);
+                    }
+                }
+
+                $_SESSION['flash'] = 'Perfil actualizado correctamente.';
+                header('Location: /?page=profile', true, 303);
+                exit;
+            } catch (Throwable $exception) {
+                if ($newAvatarPath !== null) {
+                    @unlink($avatarDirectory . '/' . basename($newAvatarPath));
+                }
+
+                error_log('FoxCraft profile save: ' . $exception->getMessage());
+                $errors[] = 'No se pudo guardar el perfil. Intentá nuevamente.';
+            }
+        } elseif ($newAvatarPath !== null) {
+            @unlink($avatarDirectory . '/' . basename($newAvatarPath));
+        }
     } elseif ($page === 'register') {
         $username = trim((string)($_POST['username'] ?? ''));
         $email = strtolower(trim((string)($_POST['email'] ?? '')));
@@ -96,42 +579,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                $check = $pdo->prepare(
-                    'SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1'
-                );
-                $check->execute(['username' => $username, 'email' => $email]);
+                require_once '/var/www/foxcraft/app/Repositories/UserRegistrationRepository.php';
+                $registrationRepository = new \FoxCraft\Repositories\UserRegistrationRepository($pdo);
+                $registrationRepository->register($username, $email, $password);
 
-                if ($check->fetch()) {
-                    $errors[] = 'Ese nombre de usuario o correo ya está registrado.';
-                } else {
-                    $pdo->beginTransaction();
-
-                    $insert = $pdo->prepare(
-                        "INSERT INTO users (username, email, password_hash, role, status)
-                         VALUES (:username, :email, :password_hash, 'user', 'active')"
-                    );
-                    $insert->execute([
-                        'username' => $username,
-                        'email' => $email,
-                        'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-                    ]);
-
-                    $userId = (int)$pdo->lastInsertId();
-                    $profile = $pdo->prepare(
-                        'INSERT INTO profiles (user_id, display_name) VALUES (:id, :name)'
-                    );
-                    $profile->execute(['id' => $userId, 'name' => $username]);
-                    $pdo->commit();
-
-                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                    $_SESSION['flash'] = 'Cuenta creada correctamente. Ya podés iniciar sesión.';
-                    header('Location: /?page=login', true, 303);
-                    exit;
-                }
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                $_SESSION['flash'] = 'Cuenta creada correctamente. Ya podés iniciar sesión.';
+                header('Location: /?page=login', true, 303);
+                exit;
+            } catch (\DomainException $exception) {
+                $errors[] = $exception->getMessage();
             } catch (Throwable $exception) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
                 error_log('FoxCraft registration: ' . $exception->getMessage());
                 $errors[] = 'No pudimos crear tu cuenta. Revisá los datos e intentá nuevamente.';
             }
@@ -141,25 +599,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = (string)($_POST['password'] ?? '');
 
         try {
-            $query = $pdo->prepare(
-                'SELECT id, username, password_hash, status
-                 FROM users WHERE username = :identity OR email = :identity LIMIT 1'
-            );
-            $query->execute(['identity' => $identity]);
-            $user = $query->fetch();
+            require_once '/var/www/foxcraft/app/Repositories/AuthenticationRepository.php';
+            $authenticationRepository = new \FoxCraft\Repositories\AuthenticationRepository($pdo);
+            $authentication = $authenticationRepository->authenticate($identity, $password);
 
-            if (!$user || !password_verify($password, $user['password_hash'])) {
-                $errors[] = 'Usuario, correo o contraseña incorrectos.';
-            } elseif ($user['status'] !== 'active') {
-                $errors[] = 'Esta cuenta no está habilitada para iniciar sesión.';
+            if (!$authentication['success']) {
+                if ($authentication['reason'] === 'inactive_account') {
+                    $errors[] = 'Esta cuenta no está habilitada para iniciar sesión.';
+                } else {
+                    $errors[] = 'Usuario, correo o contraseña incorrectos.';
+                }
             } else {
+                $user = $authentication['user'];
+
                 session_regenerate_id(true);
-                $_SESSION['user_id'] = (int)$user['id'];
+                $_SESSION['user_id'] = $user['id'];
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-
-                $update = $pdo->prepare('UPDATE users SET last_login_at = NOW() WHERE id = :id');
-                $update->execute(['id' => $user['id']]);
 
                 header('Location: /?page=profile', true, 303);
                 exit;
@@ -179,52 +635,202 @@ if ($page === 'logout' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     [$title, $description] = $pages[$page];
 }
 
-if ($page === 'profile' && empty($_SESSION['user_id'])) {
+if (in_array($page, ['profile', 'edit-profile', 'favorites'], true) && empty($_SESSION['user_id'])) {
     header('Location: /?page=login', true, 303);
     exit;
 }
 
 $categories = [];
 $contents = [];
+$adminContents = [];
+$editingContent = null;
 $categoryId = null;
+$contentDetail = null;
+$profileData = null;
+$favoriteContents = [];
+$isFavorite = false;
+$isLiked = false;
+
+$itemsPerPage = 12;
+
+$currentPage = filter_var(
+    $_GET['p'] ?? 1,
+    FILTER_VALIDATE_INT
+);
+
+$currentPage = ($currentPage !== false && $currentPage > 0)
+    ? $currentPage
+    : 1;
+
+$totalContents = 0;
+$totalPages = 1;
+
+$searchQuery = trim((string)($_GET['q'] ?? ''));
+$filterPlatform = (string)($_GET['platform'] ?? '');
+$filterVersion = (string)($_GET['version'] ?? '');
+
+$filterCategory = filter_var(
+    $_GET['category'] ?? '',
+    FILTER_VALIDATE_INT
+);
+
+$filterCategory = ($filterCategory !== false && $filterCategory > 0)
+    ? $filterCategory
+    : null;
+
+$searchQuery = mb_substr($searchQuery, 0, 180);
+
+if (!in_array($filterPlatform, ['', 'java', 'bedrock'], true)) {
+    $filterPlatform = '';
+}
+
+if (!in_array($filterVersion, ['', '1.20.8', '26+'], true)) {
+    $filterVersion = '';
+}
 
 if ($pdo) {
     try {
-        $categories = $pdo->query(
-            'SELECT name, slug, description FROM categories
-             WHERE is_active = 1 ORDER BY sort_order, name'
-        )->fetchAll();
+        require_once '/var/www/foxcraft/app/Repositories/CategoryRepository.php';
+        $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
+        $categories = $categoryRepository->findActive();
 
-        if (in_array($page, array_column($categories, 'slug'), true)) {
-            $findCategory = $pdo->prepare(
-                'SELECT id FROM categories WHERE slug = :slug AND is_active = 1 LIMIT 1'
-            );
-            $findCategory->execute(['slug' => $page]);
-            $categoryId = $findCategory->fetchColumn();
+        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+        $contentRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
+
+        if ($page === 'favorites' && !empty($_SESSION['user_id'])) {
+            require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+            $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
+            $favoriteContents = $favoriteRepository->findByUserId((int) $_SESSION['user_id']);
         }
 
-        if ($page === 'home') {
-            $contents = $pdo->query(
-                "SELECT c.id, c.title, c.slug, c.description, c.image_url,
-                        c.downloads_count, c.likes_count, cat.name AS category_name,
-                        cat.slug AS category_slug
-                 FROM contents c
-                 JOIN categories cat ON cat.id = c.category_id
-                 WHERE c.status = 'published'
-                 ORDER BY c.is_featured DESC, c.created_at DESC LIMIT 8"
-            )->fetchAll();
-        } elseif ($categoryId !== null) {
-            $list = $pdo->prepare(
-                "SELECT c.id, c.title, c.slug, c.description, c.image_url,
-                        c.downloads_count, c.likes_count, cat.name AS category_name,
-                        cat.slug AS category_slug
-                 FROM contents c
-                 JOIN categories cat ON cat.id = c.category_id
-                 WHERE c.status = 'published' AND c.category_id = :category
-                 ORDER BY c.created_at DESC LIMIT 48"
+        if (in_array($page, ['profile', 'edit-profile'], true) && !empty($_SESSION['user_id'])) {
+            $userId = (int) $_SESSION['user_id'];
+
+            require_once '/var/www/foxcraft/app/Repositories/ProfileRepository.php';
+            $profileRepository = new \FoxCraft\Repositories\ProfileRepository($pdo);
+            $profileData = $profileRepository->findByUserId($userId);
+
+            if (!$profileData) {
+                http_response_code(404);
+            } elseif ($page === 'profile') {
+                require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+                require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+
+                $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
+                $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+
+                $profileContents = $contentRepository->findPublishedByAuthor($userId);
+                $favoriteContents = $favoriteRepository->findByUserId($userId);
+                $likedContents = $likeRepository->findByUserId($userId);
+            }
+        }
+
+        if ($page === 'admin' && $isAdmin) {
+            $adminContents = $contentRepository->findAdminList();
+
+            $editId = filter_var($_GET['edit'] ?? '', FILTER_VALIDATE_INT);
+            if ($editId && $editId > 0) {
+                $editingContent = $contentRepository->findById($editId);
+
+                if (!$editingContent) {
+                    $errors[] = 'La publicación seleccionada no existe.';
+                }
+            }
+        }
+
+        if (in_array($page, array_column($categories, 'slug'), true)) {
+            $categoryId = $categoryRepository->findActiveIdBySlug($page);
+        }
+
+        $hasCatalogFilters = (
+            $searchQuery !== ''
+            || $filterPlatform !== ''
+            || $filterVersion !== ''
+            || $filterCategory !== null
+        );
+
+        if (
+            ($page === 'home' || $categoryId !== null)
+            && $hasCatalogFilters
+        ) {
+            $catalogCategoryId = $filterCategory ?? $categoryId;
+
+            $totalContents = $contentRepository->countSearchPublished(
+                $searchQuery,
+                $catalogCategoryId,
+                $filterPlatform,
+                $filterVersion
             );
-            $list->execute(['category' => $categoryId]);
-            $contents = $list->fetchAll();
+
+            $totalPages = max(
+                1,
+                (int) ceil($totalContents / $itemsPerPage)
+            );
+
+            $currentPage = min($currentPage, $totalPages);
+            $offset = ($currentPage - 1) * $itemsPerPage;
+
+            $contents = $contentRepository->searchPublished(
+                $searchQuery,
+                $catalogCategoryId,
+                $filterPlatform,
+                $filterVersion,
+                $itemsPerPage,
+                $offset
+            );
+        } elseif ($page === 'home') {
+            $contents = $contentRepository->findPublishedHome();
+        } elseif ($categoryId !== null) {
+            $totalContents = $contentRepository->countPublishedByCategory(
+                (int) $categoryId
+            );
+
+            $totalPages = max(
+                1,
+                (int) ceil($totalContents / $itemsPerPage)
+            );
+
+            $currentPage = min($currentPage, $totalPages);
+            $offset = ($currentPage - 1) * $itemsPerPage;
+
+            $contents = $contentRepository->findPublishedByCategory(
+                (int) $categoryId,
+                $itemsPerPage,
+                $offset
+            );
+        }
+
+        if ($page === 'content-detail') {
+            $contentDetail = $contentRepository->findPublishedDetail(
+                $routeContentId,
+                $routeSlug,
+                $routeCategory
+            );
+
+            if ($contentDetail) {
+                if (!empty($_SESSION['user_id'])) {
+                    require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+                    $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
+                    $isFavorite = $favoriteRepository->isFavorite(
+                        (int) $_SESSION['user_id'],
+                        (int) $contentDetail['id']
+                    );
+
+                    require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+                    $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+                    $isLiked = $likeRepository->isLiked(
+                        (int) $_SESSION['user_id'],
+                        (int) $contentDetail['id']
+                    );
+                }
+
+                $title = (string)$contentDetail['title'];
+                $description = (string)$contentDetail['description'];
+            } else {
+                http_response_code(404);
+                $title = 'Contenido no encontrado';
+                $description = 'Este contenido no existe o ya no está publicado.';
+            }
         }
     } catch (Throwable $exception) {
         error_log('FoxCraft listing: ' . $exception->getMessage());
@@ -232,37 +838,6 @@ if ($pdo) {
     }
 }
 
-function renderCards(array $contents): void {
-    if (!$contents) {
-        echo '<div class="empty-state"><span class="empty-icon">✦</span>';
-        echo '<h3>Próximamente, nuevo contenido</h3>';
-        echo '<p>Estamos preparando publicaciones para esta sección.</p></div>';
-        return;
-    }
-
-    echo '<div class="content-grid">';
-    foreach ($contents as $item) {
-        $image = trim((string)($item['image_url'] ?? ''));
-        $validImage = $image !== '' &&
-            (str_starts_with($image, '/') || str_starts_with($image, 'https://'));
-
-        echo '<article class="content-card">';
-        echo '<a class="content-image" href="/?page=' . e((string)$item['category_slug']) . '">';
-        if ($validImage) {
-            echo '<img loading="lazy" src="' . e($image) . '" alt="' . e((string)$item['title']) . '">';
-        } else {
-            echo '<span class="image-placeholder">FOXCRAFT</span>';
-        }
-        echo '</a><div class="content-info">';
-        echo '<span class="content-category">' . e((string)$item['category_name']) . '</span>';
-        echo '<h3>' . e((string)$item['title']) . '</h3>';
-        echo '<p>' . e(mb_strimwidth((string)$item['description'], 0, 115, '…', 'UTF-8')) . '</p>';
-        echo '<div class="content-meta"><span>↓ ' . number_format((int)$item['downloads_count']) . '</span>';
-        echo '<span>♥ ' . number_format((int)$item['likes_count']) . '</span></div>';
-        echo '</div></article>';
-    }
-    echo '</div>';
-}
 ?>
 <!doctype html>
 <html lang="es">
@@ -275,45 +850,19 @@ function renderCards(array $contents): void {
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/app.js" defer></script>
 </head>
-<body>
-<header class="site-header">
-    <div class="nav-wrap">
-        <a class="brand" href="/"><span class="brand-mark">F</span><span>FOX<span class="brand-accent">CRAFT</span></span></a>
-        <button class="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false">☰</button>
-        <nav class="main-nav" id="main-nav">
-            <a class="<?= $page === 'home' ? 'active' : '' ?>" href="/">Inicio</a>
-            <a href="/?page=mods">Mods</a>
-            <a href="/?page=maps">Mapas</a>
-            <a href="/?page=shaders">Shaders</a>
-            <a href="#categorias">Categorías</a>
-        </nav>
-        <div class="nav-actions">
-            <?php if (!empty($_SESSION['user_id'])): ?>
-                <a class="button button-quiet" href="/?page=profile"><?= e((string)$_SESSION['username']) ?></a>
-                <form method="post" action="/?page=logout" class="inline-form">
-                    <input type="hidden" name="csrf_token" value="<?= e($_SESSION['csrf_token']) ?>">
-                    <button class="button button-quiet" type="submit" name="logout" value="1">Salir</button>
-                </form>
-            <?php else: ?>
-                <a class="button button-quiet login-link" href="/?page=login">Ingresar</a>
-                <a class="button button-primary" href="/?page=register">Crear cuenta <span>↗</span></a>
-            <?php endif; ?>
-        </div>
-    </div>
-</header>
+<body<?= $page === 'prepare-download' && isset($prepareDownloadId) ? ' data-monetag-zone="11696491"' : '' ?>>
+<?php if ($page !== 'prepare-download'): ?>
+    <?php require '/var/www/foxcraft/app/Views/layouts/header.php'; ?>
+<?php endif; ?>
 
 <main>
-<?php if ($success !== ''): ?>
-    <div class="notice notice-success"><?= e($success) ?></div>
-<?php endif; ?>
-<?php if ($dbError): ?>
-    <div class="notice notice-error">No se pudo consultar la base de datos. Revisá el registro de errores del servidor.</div>
-<?php endif; ?>
-<?php if ($errors): ?>
-    <div class="notice notice-error"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div>
-<?php endif; ?>
+<?php require '/var/www/foxcraft/app/Views/layouts/cookie-consent.php'; ?>
+<?php require '/var/www/foxcraft/app/Views/layouts/notices.php'; ?>
 
-<?php if ($page === 'home'): ?>
+<?php if ($page === 'prepare-download' && isset($prepareDownloadId)): ?>
+    <?php require '/var/www/foxcraft/app/Views/Downloads/prepare.php'; ?>
+
+<?php elseif ($page === 'home'): ?>
     <section class="hero">
         <div class="hero-glow"></div>
         <div class="hero-content">
@@ -339,37 +888,17 @@ function renderCards(array $contents): void {
         </div>
     </section>
 
-    <section class="section categories-section" id="categorias">
-        <div class="section-heading">
-            <div><span class="eyebrow">EXPLORÁ A TU MANERA</span><h2>Categorías <span>destacadas</span></h2></div>
-            <span class="section-count"><?= count($categories) ?> secciones</span>
-        </div>
-        <div class="category-grid">
-        <?php foreach ($categories as $category): ?>
-            <a class="category-card" href="/?page=<?= e((string)$category['slug']) ?>">
-                <span class="category-icon">
-                    <img loading="lazy" src="/assets/icons/categories/<?= e(match ($category['slug']) {
-                        'mods' => 'mods.png',
-                        'maps' => 'maps.png',
-                        'shaders' => 'shaders.png',
-                        'skins' => 'skins.png',
-                        'schematics-java', 'schematics-bedrock' => 'schematics.png',
-                        default => 'mods.png',
-                    }) ?>" alt="">
-                </span>
-                <span class="category-copy"><strong><?= e((string)$category['name']) ?></strong><small><?= e((string)($category['description'] ?: 'Explorá contenido para Minecraft.')) ?></small></span>
-                <span class="category-arrow">↗</span>
-            </a>
-        <?php endforeach; ?>
-        </div>
-    </section>
+    <?php require '/var/www/foxcraft/app/Views/Content/categories.php'; ?>
+
+    <?php require '/var/www/foxcraft/app/Views/Content/search.php'; ?>
 
     <section class="section" id="contenido">
         <div class="section-heading">
             <div><span class="eyebrow">SELECCIÓN FOXCRAFT</span><h2>Contenido <span>reciente</span></h2></div>
             <a class="text-link" href="/?page=mods">Explorar secciones ↗</a>
         </div>
-        <?php renderCards($contents); ?>
+        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
+        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
     </section>
 
 <?php elseif (isset($pages[$page]) && in_array($page, array_column($categories, 'slug'), true)): ?>
@@ -381,58 +910,43 @@ function renderCards(array $contents): void {
     </section>
     <section class="section listing-section">
         <div class="section-heading"><div><span class="eyebrow">BIBLIOTECA</span><h2>Explorar <span><?= e($title) ?></span></h2></div></div>
-        <?php renderCards($contents); ?>
+        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
+        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
     </section>
+
+<?php elseif ($page === 'content-detail'): ?>
+    <?php require '/var/www/foxcraft/app/Views/Content/detail.php'; ?>
 
 <?php elseif ($page === 'register' || $page === 'login'): ?>
-    <section class="auth-section">
-        <div class="auth-card">
-            <a class="brand auth-brand" href="/"><span class="brand-mark">F</span><span>FOX<span class="brand-accent">CRAFT</span></span></a>
-            <span class="eyebrow"><?= $page === 'register' ? 'UNITE A LA COMUNIDAD' : 'QUÉ BUENO VERTE' ?></span>
-            <h1><?= $page === 'register' ? 'Creá tu cuenta.' : 'Bienvenido de nuevo.' ?></h1>
-            <p><?= e($description) ?></p>
-            <form method="post" action="/?page=<?= e($page) ?>" class="auth-form">
-                <input type="hidden" name="csrf_token" value="<?= e($_SESSION['csrf_token']) ?>">
-                <?php if ($page === 'register'): ?>
-                    <label for="username">Nombre de usuario</label>
-                    <input id="username" name="username" type="text" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" autocomplete="username" required value="<?= e((string)($_POST['username'] ?? '')) ?>">
-                    <label for="email">Correo electrónico</label>
-                    <input id="email" name="email" type="email" maxlength="190" autocomplete="email" required value="<?= e((string)($_POST['email'] ?? '')) ?>">
-                    <label for="password">Contraseña</label>
-                    <input id="password" name="password" type="password" minlength="12" autocomplete="new-password" required>
-                    <small class="form-hint">Usá al menos 12 caracteres.</small>
-                <?php else: ?>
-                    <label for="identity">Usuario o correo electrónico</label>
-                    <input id="identity" name="identity" type="text" autocomplete="username" required>
-                    <label for="password">Contraseña</label>
-                    <input id="password" name="password" type="password" autocomplete="current-password" required>
-                <?php endif; ?>
-                <button class="button button-primary button-large submit-button" type="submit"><?= $page === 'register' ? 'Crear cuenta' : 'Iniciar sesión' ?> <span>↗</span></button>
-            </form>
-            <p class="auth-switch">
-                <?= $page === 'register' ? '¿Ya tenés una cuenta?' : '¿Todavía no tenés cuenta?' ?>
-                <a href="/?page=<?= $page === 'register' ? 'login' : 'register' ?>"><?= $page === 'register' ? 'Iniciá sesión' : 'Registrate' ?></a>
-            </p>
-        </div>
-    </section>
+    <?php require '/var/www/foxcraft/app/Views/Auth/form.php'; ?>
 
-<?php elseif ($page === 'profile'): ?>
+<?php elseif ($page === 'admin' && !$isAdmin): ?>
     <section class="page-banner">
-        <span class="eyebrow">TU ESPACIO PERSONAL</span>
-        <h1>Hola, <?= e((string)($_SESSION['username'] ?? 'usuario')) ?>.</h1>
-        <p>Tu cuenta FoxCraft está activa.</p>
+        <span class="eyebrow">ACCESO RESTRINGIDO</span>
+        <h1>Acceso <span>denegado.</span></h1>
+        <p>No tenés permisos para acceder al panel de administración.</p>
         <a class="button button-primary" href="/">Volver al inicio</a>
     </section>
+
+<?php elseif ($page === 'admin' && $isAdmin): ?>
+    <?php require '/var/www/foxcraft/app/Views/Admin/content.php'; ?>
+
+<?php elseif ($page === 'edit-profile'): ?>
+    <?php require '/var/www/foxcraft/app/Views/Profile/edit.php'; ?>
+
+<?php elseif ($page === 'profile'): ?>
+    <?php require '/var/www/foxcraft/app/Views/Profile/index.php'; ?>
+
+<?php elseif ($page === 'favorites'): ?>
+    <?php require '/var/www/foxcraft/app/Views/Favorites/index.php'; ?>
+
+<?php elseif ($page === 'privacy'): ?>
+    <?php require '/var/www/foxcraft/app/Views/Legal/privacy.php'; ?>
 <?php endif; ?>
 </main>
 
-<footer class="site-footer">
-    <a class="brand" href="/"><span class="brand-mark">F</span><span>FOX<span class="brand-accent">CRAFT</span></span></a>
-    <p>Una comunidad, infinitas formas de jugar.</p>
-    <span class="footer-copy">© <?= date('Y') ?> FoxCraft</span>
-</footer>
+<?php if ($page !== 'prepare-download'): ?>
+    <?php require '/var/www/foxcraft/app/Views/layouts/footer.php'; ?>
+<?php endif; ?>
 </body>
 </html>
-PHP
-
-sudo php -l /var/www/foxcraft/public/index.php
