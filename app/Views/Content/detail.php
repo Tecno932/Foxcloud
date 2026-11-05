@@ -1,7 +1,7 @@
 
 <?php if ($contentDetail): ?>
     <?php
-    $detailImage = trim((string)($contentDetail['image_url'] ?? ''));
+    $detailImage = image_display_url(trim((string)($contentDetail['image_url'] ?? '')));
     $detailImageValid = $detailImage !== '' &&
         (str_starts_with($detailImage, '/') || str_starts_with($detailImage, 'https://'));
 

@@ -894,6 +894,7 @@ if ($pdo) {
     <meta name="theme-color" content="#09090b">
     <meta name="description" content="<?= e($description) ?>">
     <title><?= e($title) ?> | FoxCraft</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/app.js" defer></script>
 </head>

@@ -10,7 +10,7 @@ if (!$contents) {
 echo '<div class="content-grid">';
 
 foreach ($contents as $item) {
-    $image = trim((string)($item['image_url'] ?? ''));
+    $image = image_display_url(trim((string)($item['image_url'] ?? '')));
     $validImage = $image !== '' &&
         (str_starts_with($image, '/') || str_starts_with($image, 'https://'));
 
