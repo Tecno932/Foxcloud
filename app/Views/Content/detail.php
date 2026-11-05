@@ -67,7 +67,7 @@
             <div class="content-detail-actions">
 
                 <?php if ($downloadValid): ?>
-                    <?php require '/var/www/foxcraft/app/Views/Downloads/button.php'; ?>
+                    <?php require APP_ROOT . '/Views/Downloads/button.php'; ?>
                 <?php else: ?>
                     <span class="content-detail-download-disabled">
                         Descarga no disponible

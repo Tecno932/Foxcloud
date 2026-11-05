@@ -107,7 +107,7 @@
                     <?php
                     $contents = $activeContents;
                     $showFavoriteActions = $profileTab === 'favorites';
-                    require '/var/www/foxcraft/app/Views/Content/cards.php';
+                    require APP_ROOT . '/Views/Content/cards.php';
                     ?>
                 <?php else: ?>
                     <div class="empty-state">

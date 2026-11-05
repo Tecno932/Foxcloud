@@ -1,5 +1,9 @@
 <?php
-require_once '/var/www/foxcraft/app/Core/helpers.php';
+
+define('PROJECT_ROOT', dirname(__DIR__));
+define('APP_ROOT', PROJECT_ROOT . '/app');
+
+require_once APP_ROOT . '/Core/helpers.php';
 
 // Protección de sesiones
 ini_set('session.use_strict_mode', '1');
@@ -37,7 +41,7 @@ $csp = "default-src 'self'; "
 
 header('Content-Security-Policy: ' . $csp);
 
-$pages = require '/var/www/foxcraft/app/Config/pages.php';
+$pages = require APP_ROOT . '/Config/pages.php';
 
 $page = (string)($_GET['page'] ?? 'home');
 $routeContentId = 0;
@@ -86,7 +90,7 @@ if (
 }
 
 try {
-    require_once '/var/www/foxcraft/app/Core/Database.php';
+    require_once APP_ROOT . '/Core/Database.php';
     $pdo = \FoxCraft\Core\Database::connection();
 } catch (Throwable $exception) {
     error_log('FoxCraft database connection: ' . $exception->getMessage());
@@ -102,7 +106,7 @@ if ($page === 'prepare-download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     try {
-        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+        require_once APP_ROOT . '/Repositories/ContentRepository.php';
 
         $downloadRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
         $downloadUrl = $downloadRepository->findPublishedDownloadUrl($contentId);
@@ -136,7 +140,7 @@ if ($page === 'download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     try {
-        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+        require_once APP_ROOT . '/Repositories/ContentRepository.php';
         $downloadRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
         $downloadUrl = $downloadRepository->findPublishedDownloadUrl($contentId);
         $downloadParts = is_string($downloadUrl) ? parse_url($downloadUrl) : false;
@@ -169,7 +173,7 @@ if ($page === 'download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 $isAdmin = false;
 if ($pdo && !empty($_SESSION['user_id'])) {
     try {
-        require_once '/var/www/foxcraft/app/Repositories/UserRepository.php';
+        require_once APP_ROOT . '/Repositories/UserRepository.php';
         $userRepository = new \FoxCraft\Repositories\UserRepository($pdo);
         $isAdmin = $userRepository->isActiveAdmin((int)$_SESSION['user_id']);
     } catch (Throwable $exception) {
@@ -207,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'La acción de favoritos no es válida.';
         } else {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+                require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
                 $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
 
                 if ($action === 'add') {
@@ -263,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'La acción de Me gusta no es válida.';
         } else {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+                require_once APP_ROOT . '/Repositories/LikeRepository.php';
                 $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
 
                 if ($action === 'add') {
@@ -375,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/CategoryRepository.php';
+                require_once APP_ROOT . '/Repositories/CategoryRepository.php';
                 $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
 
                 if (!$categoryRepository->isActiveById((int) $categoryIdInput)) {
@@ -389,7 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/AdminContentRepository.php';
+                require_once APP_ROOT . '/Repositories/AdminContentRepository.php';
                 $adminContentRepository = new \FoxCraft\Repositories\AdminContentRepository($pdo);
 
                 $adminContentRepository->save(
@@ -435,7 +439,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $newAvatarPath = null;
         $oldAvatarPath = null;
-        $avatarDirectory = '/var/www/foxcraft/public/uploads/avatars';
+        $avatarDirectory = PROJECT_ROOT . '/public/uploads/avatars';
 
         if (mb_strlen($displayName) > 60) {
             $errors[] = 'El nombre visible no puede superar los 60 caracteres.';
@@ -534,7 +538,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/ProfileRepository.php';
+                require_once APP_ROOT . '/Repositories/ProfileRepository.php';
 
                 $profileRepository = new \FoxCraft\Repositories\ProfileRepository($pdo);
                 $currentProfile = $profileRepository->findByUserId($userId);
@@ -594,7 +598,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             try {
-                require_once '/var/www/foxcraft/app/Repositories/UserRegistrationRepository.php';
+                require_once APP_ROOT . '/Repositories/UserRegistrationRepository.php';
                 $registrationRepository = new \FoxCraft\Repositories\UserRegistrationRepository($pdo);
                 $registrationRepository->register($username, $email, $password);
 
@@ -614,7 +618,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = (string)($_POST['password'] ?? '');
 
         try {
-            require_once '/var/www/foxcraft/app/Repositories/AuthenticationRepository.php';
+            require_once APP_ROOT . '/Repositories/AuthenticationRepository.php';
             $authenticationRepository = new \FoxCraft\Repositories\AuthenticationRepository($pdo);
             $authentication = $authenticationRepository->authenticate($identity, $password);
 
@@ -705,15 +709,15 @@ if (!in_array($filterVersion, ['', '1.20.8', '26+'], true)) {
 
 if ($pdo) {
     try {
-        require_once '/var/www/foxcraft/app/Repositories/CategoryRepository.php';
+        require_once APP_ROOT . '/Repositories/CategoryRepository.php';
         $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
         $categories = $categoryRepository->findActive();
 
-        require_once '/var/www/foxcraft/app/Repositories/ContentRepository.php';
+        require_once APP_ROOT . '/Repositories/ContentRepository.php';
         $contentRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
 
         if ($page === 'favorites' && !empty($_SESSION['user_id'])) {
-            require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+            require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
             $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
             $favoriteContents = $favoriteRepository->findByUserId((int) $_SESSION['user_id']);
         }
@@ -721,15 +725,15 @@ if ($pdo) {
         if (in_array($page, ['profile', 'edit-profile'], true) && !empty($_SESSION['user_id'])) {
             $userId = (int) $_SESSION['user_id'];
 
-            require_once '/var/www/foxcraft/app/Repositories/ProfileRepository.php';
+            require_once APP_ROOT . '/Repositories/ProfileRepository.php';
             $profileRepository = new \FoxCraft\Repositories\ProfileRepository($pdo);
             $profileData = $profileRepository->findByUserId($userId);
 
             if (!$profileData) {
                 http_response_code(404);
             } elseif ($page === 'profile') {
-                require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
-                require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+                require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
+                require_once APP_ROOT . '/Repositories/LikeRepository.php';
 
                 $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
                 $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
@@ -852,14 +856,14 @@ if ($pdo) {
 
             if ($contentDetail) {
                 if (!empty($_SESSION['user_id'])) {
-                    require_once '/var/www/foxcraft/app/Repositories/FavoriteRepository.php';
+                    require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
                     $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
                     $isFavorite = $favoriteRepository->isFavorite(
                         (int) $_SESSION['user_id'],
                         (int) $contentDetail['id']
                     );
 
-                    require_once '/var/www/foxcraft/app/Repositories/LikeRepository.php';
+                    require_once APP_ROOT . '/Repositories/LikeRepository.php';
                     $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
                     $isLiked = $likeRepository->isLiked(
                         (int) $_SESSION['user_id'],
@@ -895,15 +899,15 @@ if ($pdo) {
 </head>
 <body<?= $page === 'prepare-download' && isset($prepareDownloadId) ? ' data-monetag-zone="11696491"' : '' ?>>
 <?php if ($page !== 'prepare-download'): ?>
-    <?php require '/var/www/foxcraft/app/Views/layouts/header.php'; ?>
+    <?php require APP_ROOT . '/Views/layouts/header.php'; ?>
 <?php endif; ?>
 
 <main>
-<?php require '/var/www/foxcraft/app/Views/layouts/cookie-consent.php'; ?>
-<?php require '/var/www/foxcraft/app/Views/layouts/notices.php'; ?>
+<?php require APP_ROOT . '/Views/layouts/cookie-consent.php'; ?>
+<?php require APP_ROOT . '/Views/layouts/notices.php'; ?>
 
 <?php if ($page === 'prepare-download' && isset($prepareDownloadId)): ?>
-    <?php require '/var/www/foxcraft/app/Views/Downloads/prepare.php'; ?>
+    <?php require APP_ROOT . '/Views/Downloads/prepare.php'; ?>
 
 <?php elseif ($page === 'home'): ?>
     <section class="hero">
@@ -931,17 +935,17 @@ if ($pdo) {
         </div>
     </section>
 
-    <?php require '/var/www/foxcraft/app/Views/Content/categories.php'; ?>
+    <?php require APP_ROOT . '/Views/Content/categories.php'; ?>
 
-    <?php require '/var/www/foxcraft/app/Views/Content/search.php'; ?>
+    <?php require APP_ROOT . '/Views/Content/search.php'; ?>
 
     <section class="section" id="contenido">
         <div class="section-heading">
             <div><span class="eyebrow">SELECCIÓN FOXCRAFT</span><h2>Contenido <span>reciente</span></h2></div>
             <a class="text-link" href="/?page=mods">Explorar secciones ↗</a>
         </div>
-        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
-        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
     </section>
 
 <?php elseif ($page === 'explorer'): ?>
@@ -951,7 +955,7 @@ if ($pdo) {
         <p>Descubrí todos los mods, mapas y resource packs disponibles en FoxCraft.</p>
     </section>
 
-    <?php require '/var/www/foxcraft/app/Views/Content/search.php'; ?>
+    <?php require APP_ROOT . '/Views/Content/search.php'; ?>
 
     <section class="section listing-section">
         <div class="section-heading">
@@ -962,8 +966,8 @@ if ($pdo) {
             <span class="section-count"><?= $totalContents ?> publicaciones</span>
         </div>
 
-        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
-        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
     </section>
 
 <?php elseif (isset($pages[$page]) && in_array($page, array_column($categories, 'slug'), true)): ?>
@@ -975,15 +979,15 @@ if ($pdo) {
     </section>
     <section class="section listing-section">
         <div class="section-heading"><div><span class="eyebrow">BIBLIOTECA</span><h2>Explorar <span><?= e($title) ?></span></h2></div></div>
-        <?php require '/var/www/foxcraft/app/Views/Content/cards.php'; ?>
-        <?php require '/var/www/foxcraft/app/Views/Content/pagination.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
     </section>
 
 <?php elseif ($page === 'content-detail'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Content/detail.php'; ?>
+    <?php require APP_ROOT . '/Views/Content/detail.php'; ?>
 
 <?php elseif ($page === 'register' || $page === 'login'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Auth/form.php'; ?>
+    <?php require APP_ROOT . '/Views/Auth/form.php'; ?>
 
 <?php elseif ($page === 'admin' && !$isAdmin): ?>
     <section class="page-banner">
@@ -994,24 +998,24 @@ if ($pdo) {
     </section>
 
 <?php elseif ($page === 'admin' && $isAdmin): ?>
-    <?php require '/var/www/foxcraft/app/Views/Admin/content.php'; ?>
+    <?php require APP_ROOT . '/Views/Admin/content.php'; ?>
 
 <?php elseif ($page === 'edit-profile'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Profile/edit.php'; ?>
+    <?php require APP_ROOT . '/Views/Profile/edit.php'; ?>
 
 <?php elseif ($page === 'profile'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Profile/index.php'; ?>
+    <?php require APP_ROOT . '/Views/Profile/index.php'; ?>
 
 <?php elseif ($page === 'favorites'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Favorites/index.php'; ?>
+    <?php require APP_ROOT . '/Views/Favorites/index.php'; ?>
 
 <?php elseif ($page === 'privacy'): ?>
-    <?php require '/var/www/foxcraft/app/Views/Legal/privacy.php'; ?>
+    <?php require APP_ROOT . '/Views/Legal/privacy.php'; ?>
 <?php endif; ?>
 </main>
 
 <?php if ($page !== 'prepare-download'): ?>
-    <?php require '/var/www/foxcraft/app/Views/layouts/footer.php'; ?>
+    <?php require APP_ROOT . '/Views/layouts/footer.php'; ?>
 <?php endif; ?>
 </body>
 </html>

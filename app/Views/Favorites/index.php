@@ -24,7 +24,7 @@
         <?php
         $contents = $favoriteContents;
         $showFavoriteActions = true;
-        require '/var/www/foxcraft/app/Views/Content/cards.php';
+        require APP_ROOT . '/Views/Content/cards.php';
         unset($showFavoriteActions);
         ?>
     <?php endif; ?>
