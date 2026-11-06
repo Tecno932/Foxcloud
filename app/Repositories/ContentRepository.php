@@ -13,9 +13,8 @@ final class ContentRepository
     ) {
     }
 
-    public function findPublishedHome(int $limit = 8): array
+    public function findPublishedHome(): array
     {
-        $limit = max(1, min($limit, 100));
 
         $query = $this->pdo->query(
             "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
@@ -24,8 +23,7 @@ final class ContentRepository
              FROM contents c
              JOIN categories cat ON cat.id = c.category_id
              WHERE c.status = 'published' AND cat.is_active = 1
-             ORDER BY c.is_featured DESC, c.created_at DESC
-             LIMIT {$limit}"
+             ORDER BY c.is_featured DESC, c.created_at DESC"
         );
 
         return $query->fetchAll();

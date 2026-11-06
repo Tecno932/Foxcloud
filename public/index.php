@@ -3,6 +3,7 @@
 define('PROJECT_ROOT', dirname(__DIR__));
 define('APP_ROOT', PROJECT_ROOT . '/app');
 
+require_once PROJECT_ROOT . '/vendor/autoload.php';
 require_once APP_ROOT . '/Core/helpers.php';
 
 // Protección de sesiones
@@ -49,6 +50,11 @@ $routeSlug = '';
 $routeCategory = '';
 
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+
+if ($requestPath === '/skins' || $requestPath === '/skins/') {
+    $page = 'skins';
+}
+
 if (preg_match('~^/([a-z0-9-]+)/([0-9]+)/([a-z0-9-]+)/?$~i', $requestPath, $routeMatch)) {
     $routeCategory = strtolower($routeMatch[1]);
     $routeContentId = (int)$routeMatch[2];
@@ -95,6 +101,30 @@ try {
 } catch (Throwable $exception) {
     error_log('FoxCraft database connection: ' . $exception->getMessage());
     $dbError = true;
+}
+
+if ($page === 'verify-email' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    if (!$pdo) {
+        http_response_code(503);
+        $verificationResult = 'error';
+    } else {
+        try {
+            require_once APP_ROOT . '/Repositories/EmailVerificationRepository.php';
+
+            $verificationRepository = new \FoxCraft\Repositories\EmailVerificationRepository($pdo);
+
+            $verificationToken = (string)($_GET['token'] ?? '');
+
+            if ($verificationRepository->verify($verificationToken)) {
+                $verificationResult = 'success';
+            } else {
+                $verificationResult = 'invalid';
+            }
+        } catch (Throwable $exception) {
+            error_log('FoxCraft email verification: ' . $exception->getMessage());
+            $verificationResult = 'error';
+        }
+    }
 }
 
 if ($page === 'prepare-download' && $_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -581,7 +611,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($newAvatarPath !== null) {
             @unlink($avatarDirectory . '/' . basename($newAvatarPath));
         }
-    } elseif ($page === 'register') {
+    }   elseif ($page === 'register') {
         $username = trim((string)($_POST['username'] ?? ''));
         $email = strtolower(trim((string)($_POST['email'] ?? '')));
         $password = (string)($_POST['password'] ?? '');
@@ -599,18 +629,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$errors) {
             try {
                 require_once APP_ROOT . '/Repositories/UserRegistrationRepository.php';
+                require_once APP_ROOT . '/Core/MailService.php';
+
                 $registrationRepository = new \FoxCraft\Repositories\UserRegistrationRepository($pdo);
-                $registrationRepository->register($username, $email, $password);
+                $verificationToken = $registrationRepository->register(
+                    $username,
+                    $email,
+                    $password
+                );
+
+                $appConfig = require APP_ROOT . '/Config/app.php';
+                $baseUrl = rtrim((string)$appConfig['base_url'], '/');
+
+                $verificationUrl = $baseUrl
+                    . '/?page=verify-email&token='
+                    . rawurlencode($verificationToken);
+
+                $safeUsername = htmlspecialchars(
+                    $username,
+                    ENT_QUOTES | ENT_SUBSTITUTE,
+                    'UTF-8'
+                );
+
+                $safeVerificationUrl = htmlspecialchars(
+                    $verificationUrl,
+                    ENT_QUOTES | ENT_SUBSTITUTE,
+                    'UTF-8'
+                );
+
+                $htmlBody = "
+                    <h2>Verificá tu correo electrónico</h2>
+                    <p>Hola {$safeUsername},</p>
+                    <p>Para activar tu cuenta de FoxCraft, hacé clic en el siguiente enlace:</p>
+                    <p><a href=\"{$safeVerificationUrl}\">Verificar mi correo</a></p>
+                    <p>Este enlace vence en 24 horas.</p>
+                    <p>Si no creaste esta cuenta, podés ignorar este mensaje.</p>
+                ";
+
+                $textBody = "Hola {$username},\n\n"
+                    . "Para activar tu cuenta de FoxCraft, visitá este enlace:\n"
+                    . "{$verificationUrl}\n\n"
+                    . "Este enlace vence en 24 horas.\n";
+
+                $mailService = new \FoxCraft\Core\MailService();
+                $mailService->send(
+                    $email,
+                    'Verificá tu correo - FoxCraft',
+                    $htmlBody,
+                    $textBody
+                );
 
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                $_SESSION['flash'] = 'Cuenta creada correctamente. Ya podés iniciar sesión.';
-                header('Location: /?page=login', true, 303);
+                header('Location: /?page=verify-pending', true, 303);
                 exit;
             } catch (\DomainException $exception) {
                 $errors[] = $exception->getMessage();
             } catch (Throwable $exception) {
                 error_log('FoxCraft registration: ' . $exception->getMessage());
-                $errors[] = 'No pudimos crear tu cuenta. Revisá los datos e intentá nuevamente.';
+                $errors[] = 'No se pudo completar el registro. Contactá con soporte si tu cuenta ya fue creada.';
             }
         }
     } elseif ($page === 'login') {
@@ -761,6 +837,12 @@ if ($pdo) {
             $categoryId = $categoryRepository->findActiveIdBySlug($page);
         }
 
+        if ($page === 'skins') {
+            $filterPlatform = '';
+            $filterVersion = '';
+            $filterCategory = null;
+        }
+
         $hasCatalogFilters = (
             $searchQuery !== ''
             || $filterPlatform !== ''
@@ -772,7 +854,7 @@ if ($pdo) {
             ($page === 'home' || $page === 'explorer' || $categoryId !== null)
             && $hasCatalogFilters
         ) {
-            $catalogCategoryId = $filterCategory ?? $categoryId;
+            $catalogCategoryId = $page === 'skins' ? $categoryId : ($filterCategory ?? $categoryId);
 
             $totalContents = $contentRepository->countSearchPublished(
                 $searchQuery,
@@ -826,7 +908,7 @@ if ($pdo) {
                 true
             );
         } elseif ($page === 'home') {
-            $contents = $contentRepository->findPublishedHome();
+            $contents = [];
         } elseif ($categoryId !== null) {
             $totalContents = $contentRepository->countPublishedByCategory(
                 (int) $categoryId
@@ -923,7 +1005,7 @@ if ($pdo) {
             </div>
             <div class="hero-stats">
                 <div><strong><?= count($categories) ?></strong><span>Categorías</span></div>
-                <div><strong><?= count($contents) ?></strong><span>Publicaciones visibles</span></div>
+                
                 <div><strong>∞</strong><span>Nuevas aventuras</span></div>
             </div>
         </div>
@@ -937,17 +1019,6 @@ if ($pdo) {
     </section>
 
     <?php require APP_ROOT . '/Views/Content/categories.php'; ?>
-
-    <?php require APP_ROOT . '/Views/Content/search.php'; ?>
-
-    <section class="section" id="contenido">
-        <div class="section-heading">
-            <div><span class="eyebrow">SELECCIÓN FOXCRAFT</span><h2>Contenido <span>reciente</span></h2></div>
-            <a class="text-link" href="/?page=mods">Explorar secciones ↗</a>
-        </div>
-        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
-        <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
-    </section>
 
 <?php elseif ($page === 'explorer'): ?>
     <section class="page-banner">
@@ -965,6 +1036,28 @@ if ($pdo) {
                 <h2>Todo el <span>contenido</span></h2>
             </div>
             <span class="section-count"><?= $totalContents ?> publicaciones</span>
+        </div>
+
+        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
+    </section>
+
+<?php elseif ($page === 'skins'): ?>
+    <section class="page-banner">
+        <span class="eyebrow">FOXCRAFT SKINS</span>
+        <h1>Explorá <span>skins.</span></h1>
+        <p>Encontrá tu próxima apariencia para Minecraft.</p>
+    </section>
+
+    <?php require APP_ROOT . '/Views/Content/skins-search.php'; ?>
+
+    <section class="section listing-section">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">CATÁLOGO DE SKINS</span>
+                <h2>Todas las <span>skins</span></h2>
+            </div>
+            <span class="section-count"><?= $totalContents ?> skins</span>
         </div>
 
         <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
@@ -989,6 +1082,37 @@ if ($pdo) {
 
 <?php elseif ($page === 'register' || $page === 'login'): ?>
     <?php require APP_ROOT . '/Views/Auth/form.php'; ?>
+
+<?php elseif ($page === 'verify-pending'): ?>
+    <section class="page-banner">
+        <span class="eyebrow">UN PASO MÁS</span>
+        <h1>Revisá tu <span>correo electrónico.</span></h1>
+        <p>
+            Tu cuenta fue creada correctamente. Te enviamos un correo
+            con un enlace para verificar tu dirección y activar tu cuenta.
+        </p>
+        <p>
+            Si todavía no recibiste el mensaje, revisá tu bandeja de spam
+            o correo no deseado. El enlace tiene una validez de 24 horas.
+        </p>
+        <a class="button button-primary" href="/">Volver al inicio</a>
+    </section>
+
+<?php elseif ($page === 'verify-email'): ?>
+    <section class="page-banner">
+        <?php if ($verificationResult === 'success'): ?>
+            <h1>Correo <span>verificado.</span></h1>
+            <p>Tu cuenta FoxCraft ya está activa. Ya podés iniciar sesión.</p>
+            <a class="button button-primary" href="/?page=login">Iniciar sesión</a>
+        <?php elseif ($verificationResult === 'invalid'): ?>
+            <h1>Enlace <span>inválido.</span></h1>
+            <p>El enlace venció, ya fue utilizado o no es válido.</p>
+            <a class="button button-primary" href="/?page=register">Crear cuenta</a>
+        <?php else: ?>
+            <h1>Error de <span>verificación.</span></h1>
+            <p>No pudimos verificar tu correo en este momento. Intentá nuevamente más tarde.</p>
+        <?php endif; ?>
+    </section>
 
 <?php elseif ($page === 'admin' && !$isAdmin): ?>
     <section class="page-banner">

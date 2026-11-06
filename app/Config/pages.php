@@ -13,6 +13,8 @@ return [
     'schematics' => ['Schematics', 'Construcciones para Minecraft Java y Bedrock.'],
     'login' => ['Iniciar sesión', 'Accede a tu cuenta FoxCraft.'],
     'register' => ['Crear cuenta', 'Únete a la comunidad FoxCraft.'],
+    'verify-pending' => ['Verificá tu correo', 'Activá tu cuenta de FoxCraft.'],
+    'verify-email' => ['Verificar correo', 'Activá tu cuenta de FoxCraft.'],
     'profile' => ['Mi perfil', 'Tu cuenta FoxCraft.'],
     'favorites' => ['Mis favoritos', 'Tus publicaciones guardadas en FoxCraft.'],
     'likes' => ['Me gusta', 'Gestioná tus publicaciones favoritas.'],

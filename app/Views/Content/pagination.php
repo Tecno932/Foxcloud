@@ -6,11 +6,19 @@ if ($totalPages <= 1) {
 $paginationParams = $_GET;
 $paginationParams['p'] = 1;
 
-$buildPageUrl = static function (int $targetPage) use ($paginationParams): string {
+$paginationBase = $page === 'skins' ? '/skins' : '/';
+
+$buildPageUrl = static function (int $targetPage) use ($paginationParams, $paginationBase): string {
     $params = $paginationParams;
     $params['p'] = $targetPage;
 
-    return '/?' . http_build_query($params);
+    if ($paginationBase === '/skins') {
+        unset($params['page'], $params['category'], $params['platform'], $params['version']);
+    }
+
+    $query = http_build_query($params);
+
+    return $paginationBase . ($query !== '' ? '?' . $query : '');
 };
 
 $startPage = max(1, $currentPage - 2);
