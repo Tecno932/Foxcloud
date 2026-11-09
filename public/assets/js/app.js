@@ -301,40 +301,54 @@ if (
         cropperImage.style.top = `${(stageHeight - height) / 2 + offsetY}px`;
     }
 
-    function resetCropper() {
-        cropper.hidden = true;
-        cropperImage.removeAttribute('src');
-        cropperWorkspace.hidden = true;
-        cropperLoading.hidden = true;
-        cropperConfirm.disabled = false;
+function resetCropper(clearInput = true) {
+    cropper.hidden = true;
+    cropperImage.removeAttribute('src');
+    cropperWorkspace.hidden = true;
+    cropperLoading.hidden = true;
+    cropperConfirm.disabled = false;
 
-        if (sourceUrl) {
-            URL.revokeObjectURL(sourceUrl);
-            sourceUrl = null;
-        }
-
-        avatarInput.value = '';
+    if (sourceUrl) {
+        URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
     }
 
-    function openCropper(file) {
-        cropper.hidden = false;
-        cropperLoading.hidden = false;
-        cropperWorkspace.hidden = true;
-        cropperConfirm.disabled = true;
+    if (clearInput) {
+        avatarInput.value = '';
+    }
+}
 
-        sourceUrl = URL.createObjectURL(file);
-        cropperImage.src = sourceUrl;
+function openCropper(file) {
+    cropper.hidden = false;
+    cropperLoading.hidden = false;
+    cropperWorkspace.hidden = true;
+    cropperConfirm.disabled = true;
 
-        cropperImage.decode().then(() => {
-            const stageWidth = cropperStage.clientWidth;
+    if (sourceUrl) {
+        URL.revokeObjectURL(sourceUrl);
+    }
 
-            if (!stageWidth || !cropperImage.naturalWidth) {
-                throw new Error('No se pudo calcular el recorte.');
+    sourceUrl = URL.createObjectURL(file);
+
+    cropperImage.onload = () => {
+        // Mostrar el espacio antes de medir sus dimensiones.
+        cropperLoading.hidden = true;
+        cropperWorkspace.hidden = false;
+
+        requestAnimationFrame(() => {
+            const stageWidth = cropperStage.getBoundingClientRect().width;
+            const imageWidth = cropperImage.naturalWidth;
+            const imageHeight = cropperImage.naturalHeight;
+
+            if (!stageWidth || !imageWidth || !imageHeight) {
+                resetCropper();
+                alert('No se pudo calcular el recorte.');
+                return;
             }
 
             baseScale = Math.max(
-                stageWidth / cropperImage.naturalWidth,
-                stageWidth / cropperImage.naturalHeight
+                stageWidth / imageWidth,
+                stageWidth / imageHeight
             );
 
             scale = 1;
@@ -344,14 +358,17 @@ if (
 
             updateCropImage();
 
-            cropperLoading.hidden = true;
-            cropperWorkspace.hidden = false;
             cropperConfirm.disabled = false;
-        }).catch(() => {
-            resetCropper();
-            alert('No se pudo cargar la imagen. Probá con otro archivo.');
         });
-    }
+    };
+
+    cropperImage.onerror = () => {
+        resetCropper();
+        alert('No se pudo cargar la imagen.');
+    };
+
+    cropperImage.src = sourceUrl;
+}
 
     avatarInput.addEventListener('change', () => {
         const file = avatarInput.files?.[0];
@@ -477,7 +494,7 @@ if (
             avatarPlaceholder.hidden = true;
 
             cropperConfirm.textContent = 'Confirmar recorte';
-            resetCropper();
+            resetCropper(false);
         }, 'image/jpeg', 0.90);
     });
 

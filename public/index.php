@@ -36,7 +36,7 @@ $csp = "default-src 'self'; "
     . "form-action 'self'; "
     . "script-src 'self' 'wasm-unsafe-eval' https://al5sm.com; "
     . "style-src 'self'; "
-    . "img-src 'self' https://foxcraft-web1-249i.vercel.app; "
+    . "img-src 'self' blob: https://foxcraft-web1-249i.vercel.app; "
     . "font-src 'self'; "
     . "connect-src 'self' https://255md.com https://ay267.com http://ay267.com";
 
@@ -430,6 +430,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newAvatarPath = null;
         $oldAvatarPath = null;
         $avatarDirectory = PROJECT_ROOT . '/public/uploads/avatars';
+error_log('Avatar directory: ' . $avatarDirectory);
+error_log('Directory exists: ' . (is_dir($avatarDirectory) ? 'yes' : 'no'));
+error_log('Directory writable: ' . (is_writable($avatarDirectory) ? 'yes' : 'no'));
 
         if (mb_strlen($displayName) > 60) {
             $errors[] = 'El nombre visible no puede superar los 60 caracteres.';
@@ -496,9 +499,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     || $imageInfo[1] > 2048
                 ) {
                     $errors[] = 'La imagen no puede superar los 2048 × 2048 píxeles.';
-                } elseif (!is_writable($avatarDirectory)) {
-                    $errors[] = 'El servidor no puede guardar imágenes actualmente.';
-                } else {
+                    } elseif (
+                        (!is_dir($avatarDirectory) && !@mkdir($avatarDirectory, 0755, true))
+                        || !is_writable($avatarDirectory)
+                    ) {
+                        error_log('FoxCraft: avatar directory is missing or not writable: ' . $avatarDirectory);
+                        $errors[] = 'El servidor no puede guardar imágenes actualmente.';
+                    } else {
                     $safeUsername = preg_replace(
                         '/[^a-zA-Z0-9_-]/',
                         '',
