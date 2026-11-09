@@ -117,6 +117,7 @@ if ($page === 'verify-email' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
             if ($verificationRepository->verify($verificationToken)) {
                 $verificationResult = 'success';
+                unset($_SESSION['pending_verification_email']);
             } else {
                 $verificationResult = 'invalid';
             }
@@ -337,124 +338,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'No se pudo actualizar tu Me gusta.';
             }
         }
+    } elseif ($page === 'profile') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            exit;
+        }
+
+        $userId = (int) $_SESSION['user_id'];
+        $targetUserId = filter_var(
+            $_POST['target_user_id'] ?? null,
+            FILTER_VALIDATE_INT
+        );
+        $action = (string) ($_POST['social_action'] ?? '');
+
+        if (
+            !$targetUserId ||
+            $targetUserId < 1 ||
+            $targetUserId === $userId
+        ) {
+            $errors[] = 'El usuario seleccionado no es válido.';
+        } elseif (!in_array($action, ['follow', 'unfollow', 'block', 'unblock'], true)) {
+            $errors[] = 'La acción seleccionada no es válida.';
+        } else {
+            try {
+                require_once APP_ROOT . '/Repositories/FollowRepository.php';
+                require_once APP_ROOT . '/Repositories/BlockRepository.php';
+
+                $followRepository = new \FoxCraft\Repositories\FollowRepository($pdo);
+                $blockRepository = new \FoxCraft\Repositories\BlockRepository($pdo);
+
+                if ($action === 'follow') {
+                    if ($blockRepository->hasBlockBetween($userId, $targetUserId)) {
+                        $errors[] = 'No podés seguir a este usuario porque existe un bloqueo.';
+                    } elseif ($followRepository->follow($userId, $targetUserId)) {
+                        $_SESSION['flash'] = 'Ahora seguís a este usuario.';
+                    } else {
+                        $_SESSION['flash'] = 'No se pudo seguir al usuario. Puede que ya lo sigas o que no esté disponible.';
+                    }
+                } elseif ($action === 'unfollow') {
+                    $followRepository->unfollow($userId, $targetUserId);
+                    $_SESSION['flash'] = 'Dejaste de seguir a este usuario.';
+                } elseif ($action === 'block') {
+                    if ($blockRepository->block($userId, $targetUserId)) {
+                        $_SESSION['flash'] = 'Usuario bloqueado correctamente.';
+                    } else {
+                        $_SESSION['flash'] = 'Este usuario ya está bloqueado o no está disponible.';
+                    }
+                } elseif ($action === 'unblock') {
+                    if ($blockRepository->unblock($userId, $targetUserId)) {
+                        $_SESSION['flash'] = 'Usuario desbloqueado correctamente.';
+                    } else {
+                        $_SESSION['flash'] = 'Este usuario no estaba bloqueado.';
+                    }
+                }
+
+                $returnTo = (string) ($_POST['return_to'] ?? '');
+
+                if (
+                    $returnTo === '' ||
+                    !str_starts_with($returnTo, '/') ||
+                    str_starts_with($returnTo, '//') ||
+                    str_contains($returnTo, "\r") ||
+                    str_contains($returnTo, "\n") ||
+                    str_contains($returnTo, '\\')
+                ) {
+                    $returnTo = '/?page=profile';
+                }
+
+                if (!$errors) {
+                    header('Location: ' . $returnTo, true, 303);
+                    exit;
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft social action: ' . $exception->getMessage());
+                $errors[] = 'No se pudo completar la acción social.';
+            }
+        }
     } elseif ($page === 'admin' && $isAdmin) {
-        $contentId = filter_var($_POST['content_id'] ?? '0', FILTER_VALIDATE_INT);
-        $contentId = $contentId && $contentId > 0 ? $contentId : 0;
-        $categoryIdInput = filter_var($_POST['category_id'] ?? '', FILTER_VALIDATE_INT);
-        $contentTitle = trim((string)($_POST['title'] ?? ''));
-        $contentSlug = strtolower(trim((string)($_POST['slug'] ?? '')));
-        $contentSlug = trim((string)preg_replace('/[^a-z0-9]+/', '-', $contentSlug), '-');
-        $contentDescription = trim((string)($_POST['description'] ?? ''));
-        $imageUrl = trim((string)($_POST['image_url'] ?? ''));
-        $downloadUrl = trim((string)($_POST['download_url'] ?? ''));
-        $contentType = 'download';
-        $platform = (string)($_POST['platform'] ?? 'both');
-        $status = (string)($_POST['status'] ?? 'draft');
-        $featured = isset($_POST['is_featured']) ? 1 : 0;
-        $versionInput = trim((string)($_POST['game_versions'] ?? ''));
-
-        if (!$categoryIdInput || $categoryIdInput < 1) {
-            $errors[] = 'Seleccioná una categoría válida.';
-        }
-        if ($contentTitle === '' || mb_strlen($contentTitle) > 180) {
-            $errors[] = 'El título es obligatorio y no puede superar los 180 caracteres.';
-        }
-        if ($contentSlug === '' || strlen($contentSlug) > 200) {
-            $errors[] = 'El slug debe contener letras, números y guiones.';
-        }
-        if ($contentType !== 'download') {
-            $errors[] = 'El tipo de contenido no es válido.';
-        }
-        if (!in_array($platform, ['java', 'bedrock', 'both', 'other'], true)) {
-            $errors[] = 'La plataforma seleccionada no es válida.';
-        }
-        if (!in_array($status, ['draft', 'published', 'archived'], true)) {
-            $errors[] = 'El estado seleccionado no es válido.';
-        }
-
-        foreach (['image_url' => $imageUrl, 'download_url' => $downloadUrl] as $field => $url) {
-            if ($url === '') {
-                continue;
-            }
-
-            $parts = parse_url($url);
-            $localImage = $field === 'image_url'
-                && str_starts_with($url, '/')
-                && !str_starts_with($url, '//')
-                && !str_contains($url, '\\');
-
-            $httpsUrl = filter_var($url, FILTER_VALIDATE_URL)
-                && is_array($parts)
-                && strtolower((string)($parts['scheme'] ?? '')) === 'https'
-                && !empty($parts['host']);
-
-            $isImageOptimizer = $field === 'download_url'
-                && is_array($parts)
-                && strtolower((string)($parts['path'] ?? '')) === '/_next/image';
-
-            if ($isImageOptimizer) {
-                $errors[] = 'La descarga debe apuntar al archivo descargable, no al optimizador de imágenes.';
-            } elseif (!$localImage && !$httpsUrl) {
-                $errors[] = $field === 'image_url'
-                    ? 'La imagen debe usar una ruta local o una URL HTTPS.'
-                    : 'La descarga debe usar una URL HTTPS.';
-            }
-        }
-
-        $versions = array_values(array_unique(array_filter(
-            array_map('trim', explode(',', $versionInput)),
-            static fn($value) => $value !== ''
-        )));
-        $versionsJson = json_encode($versions, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-
-        if (!$errors) {
-            try {
-                require_once APP_ROOT . '/Repositories/CategoryRepository.php';
-                $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
-
-                if (!$categoryRepository->isActiveById((int) $categoryIdInput)) {
-                    $errors[] = 'La categoría no existe o está desactivada.';
-                }
-            } catch (Throwable $exception) {
-                error_log('FoxCraft admin category validation: ' . $exception->getMessage());
-                $errors[] = 'No se pudo validar la categoría.';
-            }
-        }
-
-        if (!$errors) {
-            try {
-                require_once APP_ROOT . '/Repositories/AdminContentRepository.php';
-                $adminContentRepository = new \FoxCraft\Repositories\AdminContentRepository($pdo);
-
-                $adminContentRepository->save(
-                    $contentId,
-                    (int) $categoryIdInput,
-                    (int) $_SESSION['user_id'],
-                    $contentTitle,
-                    $contentSlug,
-                    $contentDescription,
-                    $imageUrl !== '' ? $imageUrl : null,
-                    $downloadUrl !== '' ? $downloadUrl : null,
-                    $contentType,
-                    $platform,
-                    $versionsJson,
-                    $featured,
-                    $status
-                );
-
-                $_SESSION['flash'] = $contentId > 0
-                    ? 'Publicación actualizada correctamente.'
-                    : 'Publicación creada correctamente.';
-                header('Location: /?page=admin', true, 303);
-                exit;
-            } catch (Throwable $exception) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                error_log('FoxCraft admin save: ' . $exception->getMessage());
-                $errors[] = 'No se pudo guardar. Revisá que el slug no esté repetido dentro de la categoría.';
-            }
-        }
 
     } elseif ($page === 'edit-profile') {
         if (empty($_SESSION['user_id'])) {
@@ -622,8 +582,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) {
             $errors[] = 'Ingresá un correo electrónico válido.';
         }
-        if (strlen($password) < 12 || strlen($password) > 4096) {
-            $errors[] = 'La contraseña debe tener al menos 12 caracteres.';
+        if (strlen($password) < 8 || strlen($password) > 4096) {
+            $errors[] = 'La contraseña debe tener al menos 8 caracteres.';
         }
 
         if (!$errors) {
@@ -637,6 +597,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $email,
                     $password
                 );
+
+                $accountCreated = true;
+                $_SESSION['pending_verification_email'] = $email;
 
                 $appConfig = require APP_ROOT . '/Config/app.php';
                 $baseUrl = rtrim((string)$appConfig['base_url'], '/');
@@ -679,6 +642,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $textBody
                 );
 
+                $_SESSION['pending_verification_email'] = $email;
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 header('Location: /?page=verify-pending', true, 303);
                 exit;
@@ -686,9 +650,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = $exception->getMessage();
             } catch (Throwable $exception) {
                 error_log('FoxCraft registration: ' . $exception->getMessage());
+
+                if ($accountCreated) {
+                    $_SESSION['flash'] = 'Tu cuenta fue creada, pero no pudimos enviar el correo. Podés solicitar otro enlace desde aquí.';
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+                    header('Location: /?page=verify-pending', true, 303);
+                    exit;
+                }
+
                 $errors[] = 'No se pudo completar el registro. Contactá con soporte si tu cuenta ya fue creada.';
             }
         }
+    } elseif ($page === 'verify-pending') {
+        $email = (string) ($_SESSION['pending_verification_email'] ?? '');
+
+        $_SESSION['flash'] = 'Si tu cuenta todavía necesita verificación, recibirás un nuevo enlace en tu correo.';
+
+        if ($email !== '') {
+            try {
+                require_once APP_ROOT . '/Repositories/EmailVerificationRepository.php';
+                require_once APP_ROOT . '/Core/MailService.php';
+
+                $verificationRepository = new \FoxCraft\Repositories\EmailVerificationRepository($pdo);
+                $verificationData = $verificationRepository->resend($email);
+
+                if ($verificationData !== null) {
+                    $appConfig = require APP_ROOT . '/Config/app.php';
+                    $baseUrl = rtrim((string) $appConfig['base_url'], '/');
+
+                    $verificationUrl = $baseUrl
+                        . '/?page=verify-email&token='
+                        . rawurlencode($verificationData['token']);
+
+                    $safeUsername = htmlspecialchars(
+                        $verificationData['username'],
+                        ENT_QUOTES | ENT_SUBSTITUTE,
+                        'UTF-8'
+                    );
+
+                    $safeVerificationUrl = htmlspecialchars(
+                        $verificationUrl,
+                        ENT_QUOTES | ENT_SUBSTITUTE,
+                        'UTF-8'
+                    );
+
+                    $htmlBody = "
+                        <h2>Verificá tu correo electrónico</h2>
+                        <p>Hola {$safeUsername},</p>
+                        <p>Solicitaste un nuevo enlace para activar tu cuenta de FoxCraft.</p>
+                        <p><a href=\"{$safeVerificationUrl}\">Verificar mi correo</a></p>
+                        <p>Este enlace vence en 24 horas.</p>
+                        <p>Si no realizaste esta solicitud, podés ignorar este mensaje.</p>
+                    ";
+
+                    $textBody = "Hola {$verificationData['username']},\n\n"
+                        . "Para activar tu cuenta de FoxCraft, visitá este enlace:\n"
+                        . "{$verificationUrl}\n\n"
+                        . "Este enlace vence en 24 horas.\n";
+
+                    $mailService = new \FoxCraft\Core\MailService();
+                    $mailService->send(
+                        $verificationData['email'],
+                        'Nuevo enlace de verificación - FoxCraft',
+                        $htmlBody,
+                        $textBody
+                    );
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft resend verification: ' . $exception->getMessage());
+            }
+        }
+
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        header('Location: /?page=verify-pending', true, 303);
+        exit;
     } elseif ($page === 'login') {
         $identity = trim((string)($_POST['identity'] ?? ''));
         $password = (string)($_POST['password'] ?? '');
@@ -719,6 +755,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('FoxCraft login: ' . $exception->getMessage());
             $errors[] = 'No se pudo iniciar sesión en este momento.';
         }
+    } elseif ($page === 'forgot-password') {
+        $email = trim((string)($_POST['email'] ?? ''));
+
+        if (
+            $email === ''
+            || strlen($email) > 190
+            || !filter_var($email, FILTER_VALIDATE_EMAIL)
+        ) {
+            $errors[] = 'Ingresá un correo electrónico válido.';
+        } else {
+            try {
+                require_once APP_ROOT . '/Repositories/PasswordResetRepository.php';
+                require_once APP_ROOT . '/Core/MailService.php';
+
+                $passwordResetRepository = new \FoxCraft\Repositories\PasswordResetRepository($pdo);
+                $resetData = $passwordResetRepository->create($email);
+
+                if ($resetData) {
+                    $baseUrl = rtrim(
+                        (string)(require APP_ROOT . '/Config/app.php')['base_url'],
+                        '/'
+                    );
+
+                    $resetUrl = $baseUrl
+                        . '/?page=reset-password&token='
+                        . rawurlencode($resetData['token']);
+
+                    $safeUsername = htmlspecialchars(
+                        $resetData['username'],
+                        ENT_QUOTES | ENT_SUBSTITUTE,
+                        'UTF-8'
+                    );
+
+                    $safeResetUrl = htmlspecialchars(
+                        $resetUrl,
+                        ENT_QUOTES | ENT_SUBSTITUTE,
+                        'UTF-8'
+                    );
+
+                    $htmlBody = "
+                        <h2>Recuperá tu contraseña</h2>
+                        <p>Hola {$safeUsername},</p>
+                        <p>Solicitaste cambiar la contraseña de tu cuenta FoxCraft.</p>
+                        <p><a href=\"{$safeResetUrl}\">Cambiar mi contraseña</a></p>
+                        <p>Este enlace vence en 30 minutos.</p>
+                        <p>Si no realizaste esta solicitud, podés ignorar este mensaje.</p>
+                    ";
+
+                    $textBody = "Hola {$resetData['username']},\n\n"
+                        . "Para cambiar tu contraseña de FoxCraft, visitá este enlace:\n"
+                        . "{$resetUrl}\n\n"
+                        . "Este enlace vence en 30 minutos.\n";
+
+                    $mailService = new \FoxCraft\Core\MailService();
+                    $mailService->send(
+                        $resetData['email'],
+                        'Recuperación de contraseña - FoxCraft',
+                        $htmlBody,
+                        $textBody
+                    );
+                }
+
+                $_SESSION['flash'] = 'Si existe una cuenta activa y verificada con ese correo, recibirás un enlace para cambiar la contraseña.';
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+                header('Location: /?page=forgot-password', true, 303);
+                exit;
+            } catch (Throwable $exception) {
+                error_log('FoxCraft password recovery: ' . $exception->getMessage());
+
+                $_SESSION['flash'] = 'Si existe una cuenta activa y verificada con ese correo, recibirás un enlace para cambiar la contraseña.';
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+                header('Location: /?page=forgot-password', true, 303);
+                exit;
+            }
+        }
+    } elseif ($page === 'reset-password') {
+        $token = (string)($_POST['token'] ?? '');
+        $password = (string)($_POST['password'] ?? '');
+        $passwordConfirmation = (string)($_POST['password_confirmation'] ?? '');
+
+        if (strlen($password) < 8 || strlen($password) > 4096) {
+            $errors[] = 'La contraseña debe tener entre 12 y 4096 caracteres.';
+        } elseif ($password !== $passwordConfirmation) {
+            $errors[] = 'Las contraseñas no coinciden.';
+        } else {
+            try {
+                require_once APP_ROOT . '/Repositories/PasswordResetRepository.php';
+
+                $passwordResetRepository = new \FoxCraft\Repositories\PasswordResetRepository($pdo);
+
+                if ($passwordResetRepository->reset($token, $password)) {
+                    $_SESSION['flash'] = 'Tu contraseña fue actualizada. Ya podés iniciar sesión.';
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+
+                    header('Location: /?page=login', true, 303);
+                    exit;
+                }
+
+                $errors[] = 'El enlace no es válido o venció. Solicitá uno nuevo.';
+            } catch (Throwable $exception) {
+                error_log('FoxCraft password reset: ' . $exception->getMessage());
+                $errors[] = 'No se pudo cambiar la contraseña en este momento.';
+            }
+        }
     } elseif ($page === 'logout') {
         // El cierre de sesión se procesa abajo mediante una ruta POST dedicada.
         $errors[] = 'Acción no válida.';
@@ -730,7 +872,7 @@ if ($page === 'logout' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     [$title, $description] = $pages[$page];
 }
 
-if (in_array($page, ['profile', 'edit-profile', 'favorites'], true) && empty($_SESSION['user_id'])) {
+if (in_array($page, ['edit-profile', 'favorites'], true) && empty($_SESSION['user_id'])) {
     header('Location: /?page=login', true, 303);
     exit;
 }
@@ -745,6 +887,20 @@ $profileData = null;
 $favoriteContents = [];
 $isFavorite = false;
 $isLiked = false;
+
+$profileContents = [];
+$likedContents = [];
+
+$isOwnProfile = false;
+$isFollowing = false;
+$isBlockedByMe = false;
+$isBlockedByProfile = false;
+$hasBlockBetween = false;
+
+$followers = [];
+$following = [];
+$followersCount = 0;
+$followingCount = 0;
 
 $itemsPerPage = 12;
 
@@ -798,25 +954,74 @@ if ($pdo) {
             $favoriteContents = $favoriteRepository->findByUserId((int) $_SESSION['user_id']);
         }
 
-        if (in_array($page, ['profile', 'edit-profile'], true) && !empty($_SESSION['user_id'])) {
-            $userId = (int) $_SESSION['user_id'];
-
+        if ($page === 'profile' || $page === 'edit-profile') {
             require_once APP_ROOT . '/Repositories/ProfileRepository.php';
+
             $profileRepository = new \FoxCraft\Repositories\ProfileRepository($pdo);
-            $profileData = $profileRepository->findByUserId($userId);
+
+            $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+            $requestedUsername = trim((string) ($_GET['user'] ?? ''));
+
+            $isOwnProfile = false;
+
+            if ($page === 'edit-profile') {
+                $profileData = $currentUserId > 0
+                    ? $profileRepository->findByUserId($currentUserId)
+                    : null;
+
+                $isOwnProfile = true;
+            } elseif ($requestedUsername !== '') {
+                $profileData = $profileRepository->findByUsername($requestedUsername);
+                $isOwnProfile = $profileData !== null
+                    && $currentUserId === (int) $profileData['id'];
+            } else {
+                $profileData = $currentUserId > 0
+                    ? $profileRepository->findByUserId($currentUserId)
+                    : null;
+
+                $isOwnProfile = $profileData !== null;
+            }
 
             if (!$profileData) {
                 http_response_code(404);
             } elseif ($page === 'profile') {
-                require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
-                require_once APP_ROOT . '/Repositories/LikeRepository.php';
+                $profileUserId = (int) $profileData['id'];
 
-                $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
-                $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+                $profileContents = $contentRepository->findPublishedByAuthor($profileUserId);
 
-                $profileContents = $contentRepository->findPublishedByAuthor($userId);
-                $favoriteContents = $favoriteRepository->findByUserId($userId);
-                $likedContents = $likeRepository->findByUserId($userId);
+                require_once APP_ROOT . '/Repositories/FollowRepository.php';
+                require_once APP_ROOT . '/Repositories/BlockRepository.php';
+
+                $followRepository = new \FoxCraft\Repositories\FollowRepository($pdo);
+                $blockRepository = new \FoxCraft\Repositories\BlockRepository($pdo);
+
+                $followersCount = $followRepository->countFollowers($profileUserId);
+                $followingCount = $followRepository->countFollowing($profileUserId);
+
+                $followers = $followRepository->findFollowers($profileUserId);
+                $following = $followRepository->findFollowing($profileUserId);
+
+                if (!$isOwnProfile && $currentUserId > 0) {
+                    $isBlockedByMe = $blockRepository->isBlocked($currentUserId, $profileUserId);
+                    $isBlockedByProfile = $blockRepository->isBlocked($profileUserId, $currentUserId);
+
+                    $hasBlockBetween = $isBlockedByMe || $isBlockedByProfile;
+
+                    if (!$hasBlockBetween) {
+                        $isFollowing = $followRepository->isFollowing($currentUserId, $profileUserId);
+                    }
+                }
+
+                if ($isOwnProfile) {
+                    require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
+                    require_once APP_ROOT . '/Repositories/LikeRepository.php';
+
+                    $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
+                    $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+
+                    $favoriteContents = $favoriteRepository->findByUserId($profileUserId);
+                    $likedContents = $likeRepository->findByUserId($profileUserId);
+                }
             }
         }
 
@@ -1080,7 +1285,7 @@ if ($pdo) {
 <?php elseif ($page === 'content-detail'): ?>
     <?php require APP_ROOT . '/Views/Content/detail.php'; ?>
 
-<?php elseif ($page === 'register' || $page === 'login'): ?>
+<?php elseif (in_array($page, ['register', 'login', 'forgot-password', 'reset-password'], true)): ?>
     <?php require APP_ROOT . '/Views/Auth/form.php'; ?>
 
 <?php elseif ($page === 'verify-pending'): ?>
@@ -1095,7 +1300,26 @@ if ($pdo) {
             Si todavía no recibiste el mensaje, revisá tu bandeja de spam
             o correo no deseado. El enlace tiene una validez de 24 horas.
         </p>
-        <a class="button button-primary" href="/">Volver al inicio</a>
+
+        <?php if ($success !== ''): ?>
+            <p><?= e($success) ?></p>
+        <?php endif; ?>
+
+        <?php if (!empty($_SESSION['pending_verification_email'])): ?>
+            <form method="post" action="/?page=verify-pending" class="auth-form">
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="<?= e($_SESSION['csrf_token']) ?>"
+                >
+
+                <button class="button button-primary button-large submit-button" type="submit">
+                    Reenviar correo
+                </button>
+            </form>
+        <?php endif; ?>
+
+        <a class="text-link" href="/">Volver al inicio</a>
     </section>
 
 <?php elseif ($page === 'verify-email'): ?>
@@ -1142,5 +1366,46 @@ if ($pdo) {
 <?php if ($page !== 'prepare-download'): ?>
     <?php require APP_ROOT . '/Views/layouts/footer.php'; ?>
 <?php endif; ?>
+
+
+<script>
+document.querySelectorAll('.password-toggle').forEach(button => {
+    const input = document.getElementById(button.dataset.target);
+
+    if (!input) return;
+
+    const eye = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+    `;
+
+    const eyeOff = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m3 3 18 18"/>
+            <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/>
+            <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15 15 0 0 1-3 3.8"/>
+            <path d="M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7a10.8 10.8 0 0 0 3.1-.5"/>
+        </svg>
+    `;
+
+    button.innerHTML = eye;
+    button.setAttribute('aria-label', 'Mostrar contraseña');
+    button.setAttribute('aria-pressed', 'false');
+
+    button.addEventListener('click', () => {
+        const visible = input.type === 'password';
+
+        input.type = visible ? 'text' : 'password';
+        button.innerHTML = visible ? eyeOff : eye;
+        button.setAttribute(
+            'aria-label',
+            visible ? 'Ocultar contraseña' : 'Mostrar contraseña'
+        );
+        button.setAttribute('aria-pressed', String(visible));
+    });
+});
+</script>
 </body>
 </html>

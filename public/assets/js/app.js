@@ -490,3 +490,85 @@ if (
         }
     });
 }
+
+// Mostrar u ocultar contraseñas
+document.querySelectorAll('.password-toggle').forEach((button) => {
+    const input = document.getElementById(button.dataset.target);
+
+    if (!input) return;
+
+    const eye = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+    `;
+
+    const eyeOff = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m3 3 18 18"/>
+            <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/>
+            <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15 15 0 0 1-3 3.8"/>
+            <path d="M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7a10.8 10.8 0 0 0 3.1-.5"/>
+        </svg>
+    `;
+
+    button.innerHTML = eye;
+    button.setAttribute('aria-label', 'Mostrar contraseña');
+    button.setAttribute('aria-pressed', 'false');
+
+    button.addEventListener('click', () => {
+        const visible = input.type === 'password';
+
+        input.type = visible ? 'text' : 'password';
+        button.innerHTML = visible ? eyeOff : eye;
+
+        button.setAttribute(
+            'aria-label',
+            visible ? 'Ocultar contraseña' : 'Mostrar contraseña'
+        );
+
+        button.setAttribute('aria-pressed', String(visible));
+    });
+});
+
+// Listas de seguidores y seguidos
+document.querySelectorAll('[data-social-dialog]').forEach((dialog) => {
+    const title = dialog.querySelector('[data-social-dialog-title]');
+    const closeButton = dialog.querySelector('[data-social-close]');
+    const panels = dialog.querySelectorAll('[data-social-panel]');
+
+    document.querySelectorAll('[data-social-list]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const listType = button.dataset.socialList;
+
+            const panel = dialog.querySelector(
+                `[data-social-panel="${listType}"]`
+            );
+
+            if (!panel) return;
+
+            panels.forEach((item) => {
+                item.hidden = item !== panel;
+            });
+
+            title.textContent = listType === 'followers'
+                ? 'Seguidores'
+                : 'Seguidos';
+
+            if (!dialog.open) {
+                dialog.showModal();
+            }
+        });
+    });
+
+    closeButton?.addEventListener('click', () => {
+        dialog.close();
+    });
+
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) {
+            dialog.close();
+        }
+    });
+});

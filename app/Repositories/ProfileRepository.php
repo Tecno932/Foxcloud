@@ -38,6 +38,32 @@ final class ProfileRepository
         return $profile ?: null;
     }
 
+    public function findByUsername(string $username): ?array
+    {
+        $query = $this->pdo->prepare(
+            'SELECT
+                u.id,
+                u.username,
+                u.email,
+                p.display_name,
+                p.bio,
+                p.avatar_path,
+                p.website_url,
+                p.created_at,
+                p.updated_at
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.username = :username
+            AND u.status = \'active\'
+            LIMIT 1'
+        );
+
+        $query->execute(['username' => $username]);
+        $profile = $query->fetch(PDO::FETCH_ASSOC);
+
+        return $profile ?: null;
+    }
+
     public function save(
         int $userId,
         string $displayName,

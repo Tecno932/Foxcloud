@@ -12,6 +12,8 @@ return [
     'armor-trims' => ['Armor Trims', 'Personaliza tus armaduras.'],
     'schematics' => ['Schematics', 'Construcciones para Minecraft Java y Bedrock.'],
     'login' => ['Iniciar sesión', 'Accede a tu cuenta FoxCraft.'],
+    'forgot-password' => ['Recuperar contraseña', 'Solicitá un enlace para recuperar tu cuenta FoxCraft.'],
+    'reset-password' => ['Nueva contraseña', 'Elegí una nueva contraseña para tu cuenta FoxCraft.'],
     'register' => ['Crear cuenta', 'Únete a la comunidad FoxCraft.'],
     'verify-pending' => ['Verificá tu correo', 'Activá tu cuenta de FoxCraft.'],
     'verify-email' => ['Verificar correo', 'Activá tu cuenta de FoxCraft.'],
