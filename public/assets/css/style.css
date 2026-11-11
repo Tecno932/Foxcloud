@@ -3953,3 +3953,285 @@ input:disabled {
         transition-duration: .01ms !important;
     }
 }
+
+/* ========================================
+   MOSAICARY - PORTADAS DE SKINS
+======================================== */
+
+.skin-image {
+    position: relative;
+    aspect-ratio: 1 / 1.3;
+    width: 100%;
+    overflow: hidden;
+    isolation: isolate;
+    border-radius: 14px;
+    background: #17191f;
+}
+
+.skin-image .content-image-background {
+    display: none;
+}
+
+.skin-image .content-image-main {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    transform: scale(1.12);
+    image-rendering: auto;
+}
+
+.skin-image .content-image-overlay {
+    z-index: 2;
+    border-radius: 0 0 14px 14px;
+}
+
+
+/* ========================================
+   MOSAICARY - DISEÑO DE TARJETAS
+======================================== */
+
+
+/* ========================================
+   MOSAICARY - DISEÑO DE TARJETAS
+======================================== */
+
+.skins-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(155px, 185px));
+    justify-content: center;
+    gap: 28px 20px;
+}
+
+.skin-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+    transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.skin-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-3px);
+}
+
+.skin-card-header {
+    min-width: 0;
+}
+
+.skin-card-header h3 {
+    margin: 0 0 4px;
+    overflow: hidden;
+    color: var(--foreground);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.skin-card-header p {
+    margin: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.skin-card-header a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.skin-card-header a:hover {
+    text-decoration: underline;
+}
+
+/* Imagen de la skin */
+
+.skin-card .skin-image {
+    position: relative;
+    width: calc(100% + 26px);
+    margin: -10px -13px 0;
+    aspect-ratio: 1 / 1.3;
+    overflow: hidden;
+    isolation: isolate;
+    border: none;
+    border-radius: 0;
+    background:
+        radial-gradient(
+            ellipse at center,
+            #d0d1d4 0%,
+            #999ca2 38%,
+            #555961 72%,
+            #252830 100%
+        );
+}
+
+.skin-card .skin-image .content-image-main {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    transform: scale(1.12);
+    image-rendering: auto;
+}
+
+/* Botones */
+
+.skin-card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+}
+
+.skin-card-actions .button {
+    display: flex;
+    min-width: 0;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 5px;
+    border-radius: 9px;
+    font-size: 10px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+@media (max-width: 430px) {
+    .skins-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px 12px;
+    }
+
+    .skin-card {
+        padding: 9px;
+    }
+}
+
+
+/* ========================================
+   VISOR 3D DE SKINS
+======================================== */
+
+.skin-viewer-modal {
+    width: min(92%, 520px);
+    max-width: 520px;
+    max-height: 92vh;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--foreground);
+}
+
+.skin-viewer-modal::backdrop {
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(5px);
+}
+
+.skin-viewer-container {
+    display: flex;
+    flex-direction: column;
+    max-height: 92vh;
+}
+
+.skin-viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+.skin-viewer-header h2 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.skin-viewer-close {
+    display: flex;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 25px;
+    cursor: pointer;
+}
+
+.skin-viewer-stage {
+    position: relative;
+    width: 100%;
+    height: min(62vh, 460px);
+    min-height: 300px;
+    overflow: hidden;
+    background: radial-gradient(
+        ellipse at center,
+        #d0d1d4 0%,
+        #999ca2 38%,
+        #555961 72%,
+        #252830 100%
+    );
+}
+
+#skin-viewer-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+.skin-viewer-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid var(--border);
+}
+
+.skin-viewer-actions[hidden],
+.skin-viewer-actions .button[hidden] {
+    display: none;
+}
+
+@media (max-width: 480px) {
+    .skin-viewer-modal {
+        width: 94%;
+    }
+
+    .skin-viewer-stage {
+        height: 55vh;
+        min-height: 260px;
+    }
+
+    .skin-viewer-actions .button {
+        flex: 1;
+        min-width: 0;
+        padding: 10px 6px;
+        font-size: 12px;
+    }
+}

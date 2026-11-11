@@ -36,7 +36,7 @@ $csp = "default-src 'self'; "
     . "form-action 'self'; "
     . "script-src 'self' 'wasm-unsafe-eval' https://al5sm.com; "
     . "style-src 'self'; "
-    . "img-src 'self' blob: https://foxcraft-web1-249i.vercel.app; "
+    . "img-src 'self' blob: https://foxcraft-web1-249i.vercel.app https://mosaicary.com; "
     . "font-src 'self'; "
     . "connect-src 'self' https://255md.com https://ay267.com http://ay267.com";
 
@@ -430,9 +430,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newAvatarPath = null;
         $oldAvatarPath = null;
         $avatarDirectory = PROJECT_ROOT . '/public/uploads/avatars';
-error_log('Avatar directory: ' . $avatarDirectory);
-error_log('Directory exists: ' . (is_dir($avatarDirectory) ? 'yes' : 'no'));
-error_log('Directory writable: ' . (is_writable($avatarDirectory) ? 'yes' : 'no'));
 
         if (mb_strlen($displayName) > 60) {
             $errors[] = 'El nombre visible no puede superar los 60 caracteres.';
@@ -922,6 +919,8 @@ $currentPage = ($currentPage !== false && $currentPage > 0)
 
 $totalContents = 0;
 $totalPages = 1;
+$skins = [];
+$skinsError = false;
 
 $searchQuery = trim((string)($_GET['q'] ?? ''));
 $filterPlatform = (string)($_GET['platform'] ?? '');
@@ -1062,11 +1061,41 @@ if ($pdo) {
             || $filterCategory !== null
         );
 
-        if (
+        if ($page === 'skins') {
+            require_once APP_ROOT . '/Core/MosaicaryClient.php';
+
+            try {
+                $mosaicaryClient = new \FoxCraft\Core\MosaicaryClient();
+
+                $result = $mosaicaryClient->search(
+                    $searchQuery,
+                    $itemsPerPage,
+                    $currentPage
+                );
+
+                $totalContents = $result['total'];
+                $totalPages = max(1, (int) ceil($totalContents / $itemsPerPage));
+
+                if ($currentPage > $totalPages) {
+                    $currentPage = $totalPages;
+
+                    $result = $mosaicaryClient->search(
+                        $searchQuery,
+                        $itemsPerPage,
+                        $currentPage
+                    );
+                }
+
+                $skins = $result['skins'];
+            } catch (Throwable $exception) {
+                error_log('FoxCraft Mosaicary: ' . $exception->getMessage());
+                $skinsError = true;
+            }
+        } elseif (
             ($page === 'home' || $page === 'explorer' || $categoryId !== null)
             && $hasCatalogFilters
         ) {
-            $catalogCategoryId = $page === 'skins' ? $categoryId : ($filterCategory ?? $categoryId);
+            $catalogCategoryId = $filterCategory ?? $categoryId;
 
             $totalContents = $contentRepository->countSearchPublished(
                 $searchQuery,
@@ -1191,6 +1220,11 @@ if ($pdo) {
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/app.js" defer></script>
+
+    <?php if ($page === 'skins'): ?>
+        <script src="/assets/vendor/skinview3d/skinview3d.bundle.js" defer></script>
+        <script src="/assets/js/skin-viewer.js" defer></script>
+    <?php endif; ?>
 </head>
 <body<?= $page === 'prepare-download' && isset($prepareDownloadId) ? ' data-monetag-zone="11696491"' : '' ?>>
 <?php if ($page !== 'prepare-download'): ?>
@@ -1272,7 +1306,7 @@ if ($pdo) {
             <span class="section-count"><?= $totalContents ?> skins</span>
         </div>
 
-        <?php require APP_ROOT . '/Views/Content/cards.php'; ?>
+        <?php require APP_ROOT . '/Views/Content/skins-cards.php'; ?>
         <?php require APP_ROOT . '/Views/Content/pagination.php'; ?>
     </section>
 
