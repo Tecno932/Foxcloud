@@ -24,7 +24,7 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
         <?php endif; ?>
     </div>
 
-    <form method="post" action="/?page=admin" class="auth-form admin-form">
+    <form method="post" action="/?page=admin" enctype="multipart/form-data" class="auth-form admin-form">
         <input type="hidden" name="csrf_token" value="<?= e((string)$_SESSION['csrf_token']) ?>">
         <input type="hidden" name="content_id" value="<?= (int)($formContent['id'] ?? 0) ?>">
 
@@ -50,6 +50,17 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
 
         <label for="admin-image">Imagen (URL HTTPS o ruta local)</label>
         <input id="admin-image" name="image_url" type="text" maxlength="1000" value="<?= e((string)($formContent['image_url'] ?? '')) ?>">
+
+        <label for="admin-image-file">O subir una imagen desde tu computadora</label>
+        <input
+            id="admin-image-file"
+            name="image_file"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+        >
+        <small class="form-hint">
+            JPG, PNG o WebP. Máximo 2 MB. Las imágenes JPG y PNG generan una versión WebP automáticamente.
+        </small>
 
         <label for="admin-download">URL de descarga (HTTPS)</label>
         <input id="admin-download" name="download_url" type="url" maxlength="2000" value="<?= e((string)($formContent['download_url'] ?? '')) ?>">

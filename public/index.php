@@ -103,6 +103,279 @@ try {
     $dbError = true;
 }
 
+/*
+|--------------------------------------------------------------------------
+| DISCORD OAUTH2
+|--------------------------------------------------------------------------
+| Desarrollo local: http://localhost:8080
+| Producción: cambiar redirect_uri en /etc/foxcraft/discord.php
+| y registrar la URL HTTPS correspondiente en Discord Developer Portal.
+*/
+
+if (
+    $page === 'discord-link'
+    && $_SERVER['REQUEST_METHOD'] === 'GET'
+) {
+    if (empty($_SESSION['user_id'])) {
+        header('Location: /?page=login', true, 303);
+        exit;
+    }
+
+    if (!$pdo) {
+        $_SESSION['flash'] = 'No se pudo conectar con el servicio.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+
+    try {
+        $discordConfigPath = '/etc/foxcraft/discord.php';
+
+        if (!is_readable($discordConfigPath)) {
+            throw new RuntimeException('No se puede leer la configuración privada de Discord.');
+        }
+
+        $discordConfig = require $discordConfigPath;
+
+        if (!is_array($discordConfig)) {
+            throw new RuntimeException('La configuración de Discord no es válida.');
+        }
+
+        require_once APP_ROOT . '/Core/DiscordOAuthService.php';
+
+        $discordOAuth = new \FoxCraft\Core\DiscordOAuthService($discordConfig);
+
+        $state = bin2hex(random_bytes(32));
+
+        $_SESSION['discord_oauth'] = [
+            'state' => $state,
+            'user_id' => (int)$_SESSION['user_id'],
+            'expires_at' => time() + 600,
+        ];
+
+        header(
+            'Location: ' . $discordOAuth->getAuthorizationUrl($state),
+            true,
+            302
+        );
+        exit;
+    } catch (Throwable $exception) {
+        error_log('FoxCraft Discord OAuth start: ' . $exception->getMessage());
+
+        unset($_SESSION['discord_oauth']);
+
+        $_SESSION['flash'] = 'No se pudo iniciar la vinculación con Discord.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+}
+
+
+if (
+    $page === 'discord-guilds'
+    && $_SERVER['REQUEST_METHOD'] === 'GET'
+) {
+    if (empty($_SESSION['user_id'])) {
+        header('Location: /?page=login', true, 303);
+        exit;
+    }
+
+    if (!$pdo) {
+        $_SESSION['flash'] = 'No se pudo conectar con el servicio.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+
+    try {
+        require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
+        require_once APP_ROOT . '/Core/DiscordOAuthService.php';
+
+        $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
+        $discordAccount = $discordRepository->findByUserId((int)$_SESSION['user_id']);
+
+        if (!$discordAccount) {
+            $_SESSION['flash'] = 'Primero tenés que vincular tu cuenta Discord con FoxCraft.';
+            header('Location: /?page=profile', true, 303);
+            exit;
+        }
+
+        $discordConfigPath = '/etc/foxcraft/discord.php';
+
+        if (!is_readable($discordConfigPath)) {
+            throw new RuntimeException('No se puede leer la configuración privada de Discord.');
+        }
+
+        $discordConfig = require $discordConfigPath;
+
+        if (!is_array($discordConfig)) {
+            throw new RuntimeException('La configuración de Discord no es válida.');
+        }
+
+        $discordOAuth = new \FoxCraft\Core\DiscordOAuthService($discordConfig);
+        $state = bin2hex(random_bytes(32));
+
+        $_SESSION['discord_guilds_oauth'] = [
+            'state' => $state,
+            'user_id' => (int)$_SESSION['user_id'],
+            'expires_at' => time() + 600,
+        ];
+
+        header(
+            'Location: ' . $discordOAuth->getAuthorizationUrl($state, 'identify guilds'),
+            true,
+            302
+        );
+        exit;
+    } catch (Throwable $exception) {
+        error_log('FoxCraft Discord guild OAuth start: ' . $exception->getMessage());
+
+        unset($_SESSION['discord_guilds_oauth']);
+
+        $_SESSION['flash'] = 'No se pudo iniciar la consulta de servidores Discord.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+}
+
+if (
+    $page === 'discord-callback'
+    && $_SERVER['REQUEST_METHOD'] === 'GET'
+) {
+    $receivedState = (string)($_GET['state'] ?? '');
+    $matchedSessionKey = null;
+    $oauthSession = null;
+
+    // Los dos flujos OAuth son independientes y consumen su propio estado.
+    foreach (['discord_oauth', 'discord_guilds_oauth'] as $sessionKey) {
+        $candidate = $_SESSION[$sessionKey] ?? null;
+
+        if (
+            is_array($candidate)
+            && isset($candidate['state'])
+            && is_string($candidate['state'])
+            && $candidate['state'] !== ''
+            && $receivedState !== ''
+            && hash_equals($candidate['state'], $receivedState)
+        ) {
+            $matchedSessionKey = $sessionKey;
+            $oauthSession = $candidate;
+            unset($_SESSION[$sessionKey]);
+            break;
+        }
+    }
+
+    $oauthUserId = is_array($oauthSession)
+        ? (int)($oauthSession['user_id'] ?? 0)
+        : 0;
+
+    $expiresAt = is_array($oauthSession)
+        ? (int)($oauthSession['expires_at'] ?? 0)
+        : 0;
+
+    if (
+        $matchedSessionKey === null
+        || $expiresAt < time()
+        || $oauthUserId < 1
+        || empty($_SESSION['user_id'])
+        || (int)$_SESSION['user_id'] !== $oauthUserId
+    ) {
+        $_SESSION['flash'] = 'La autorización de Discord venció o no es válida. Intentá nuevamente.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+
+    if (!$pdo) {
+        $_SESSION['flash'] = 'No se pudo completar la autorización. El servicio no está disponible.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+
+    if (
+        isset($_GET['error'])
+        || !isset($_GET['code'])
+        || !is_string($_GET['code'])
+        || $_GET['code'] === ''
+    ) {
+        $_SESSION['flash'] = 'Cancelaste o rechazaste la autorización de Discord.';
+        header('Location: /?page=profile', true, 303);
+        exit;
+    }
+
+    try {
+        $discordConfigPath = '/etc/foxcraft/discord.php';
+
+        if (!is_readable($discordConfigPath)) {
+            throw new RuntimeException('No se puede leer la configuración privada de Discord.');
+        }
+
+        $discordConfig = require $discordConfigPath;
+
+        if (!is_array($discordConfig)) {
+            throw new RuntimeException('La configuración de Discord no es válida.');
+        }
+
+        require_once APP_ROOT . '/Core/DiscordOAuthService.php';
+        require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
+
+        $discordOAuth = new \FoxCraft\Core\DiscordOAuthService($discordConfig);
+        $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
+
+        if ($matchedSessionKey === 'discord_guilds_oauth') {
+            $result = $discordOAuth->getIdentityAndGuilds((string)$_GET['code']);
+            $identity = $result['identity'];
+            $managedGuilds = $result['guilds'];
+
+            $linkedAccount = $discordRepository->findByUserId($oauthUserId);
+
+            if (
+                !$linkedAccount
+                || !isset($linkedAccount['discord_user_id'])
+                || !hash_equals(
+                    (string)$linkedAccount['discord_user_id'],
+                    (string)$identity['id']
+                )
+            ) {
+                unset($_SESSION['discord_managed_guilds']);
+
+                throw new RuntimeException(
+                    'La cuenta Discord autorizada no coincide con la cuenta vinculada a FoxCraft.'
+                );
+            }
+
+            // Sólo se guarda información pública de los servidores. Nunca el token OAuth.
+            $_SESSION['discord_managed_guilds'] = [
+                'user_id' => $oauthUserId,
+                'discord_user_id' => (string)$identity['id'],
+                'fetched_at' => time(),
+                'guilds' => $managedGuilds,
+            ];
+
+            $_SESSION['flash'] = 'La lista de servidores administrables se actualizó correctamente.';
+        } else {
+            // Flujo original de vinculación: conserva su comportamiento.
+            $identity = $discordOAuth->getIdentity((string)$_GET['code']);
+
+            $discordRepository->link(
+                $oauthUserId,
+                $identity['id'],
+                $identity['username'],
+                $identity['global_name'],
+                $identity['avatar_hash']
+            );
+
+            $_SESSION['flash'] = 'Tu cuenta Discord fue vinculada correctamente.';
+        }
+    } catch (Throwable $exception) {
+        error_log('FoxCraft Discord OAuth callback: ' . $exception->getMessage());
+
+        $_SESSION['flash'] = $exception instanceof RuntimeException
+            ? $exception->getMessage()
+            : 'No se pudo completar la autorización con Discord.';
+    }
+
+    header('Location: /?page=profile', true, 303);
+    exit;
+}
+
 if ($page === 'verify-email' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     if (!$pdo) {
         http_response_code(503);
@@ -212,6 +485,140 @@ if ($pdo && !empty($_SESSION['user_id'])) {
     }
 }
 
+
+
+$discordManageData = null;
+$discordManageError = null;
+
+if ($page === 'discord-manage' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    if (empty($_SESSION['user_id'])) {
+        header('Location: /?page=login', true, 303);
+        return;
+    }
+
+    if (!$pdo) {
+        http_response_code(503);
+        $discordManageError = 'El servicio no está disponible en este momento.';
+    } else {
+        try {
+            require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
+            require_once APP_ROOT . '/Core/BotDatabase.php';
+
+            $manageUserId = (int)$_SESSION['user_id'];
+            $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
+            $discordAccount = $discordRepository->findByUserId($manageUserId);
+
+            if (!$discordAccount) {
+                header('Location: /?page=discord-link', true, 303);
+                return;
+            }
+
+            $guildCache = $_SESSION['discord_managed_guilds'] ?? null;
+
+            $validCache = (
+                is_array($guildCache)
+                && (int)($guildCache['user_id'] ?? 0) === $manageUserId
+                && isset($guildCache['discord_user_id'])
+                && hash_equals(
+                    (string)$discordAccount['discord_user_id'],
+                    (string)$guildCache['discord_user_id']
+                )
+                && (int)($guildCache['fetched_at'] ?? 0) >= time() - 900
+                && is_array($guildCache['guilds'] ?? null)
+            );
+
+            if (!$validCache) {
+                header('Location: /?page=discord-guilds', true, 303);
+                return;
+            }
+
+            $requestedGuildId = (string)($_GET['id'] ?? '');
+
+            if (!preg_match('/\A[0-9]{17,20}\z/', $requestedGuildId)) {
+                http_response_code(404);
+                $discordManageError = 'El servidor solicitado no es válido.';
+            } else {
+                $managedGuild = null;
+
+                foreach ($guildCache['guilds'] as $candidateGuild) {
+                    if (
+                        is_array($candidateGuild)
+                        && isset($candidateGuild['id'])
+                        && is_string($candidateGuild['id'])
+                        && hash_equals($requestedGuildId, $candidateGuild['id'])
+                    ) {
+                        $managedGuild = $candidateGuild;
+                        break;
+                    }
+                }
+
+                if ($managedGuild === null) {
+                    http_response_code(403);
+                    $discordManageError = 'No tenés permisos para administrar este servidor.';
+                } else {
+                    $permissionsRaw = (string)($managedGuild['permissions'] ?? '0');
+
+                    $permissions = (
+                        PHP_INT_SIZE >= 8
+                        && preg_match('/\A[0-9]{1,18}\z/', $permissionsRaw)
+                    ) ? (int)$permissionsRaw : 0;
+
+                    $isGuildOwner = !empty($managedGuild['owner']);
+
+                    $canManageGuild = (
+                        ($permissions & 0x8) === 0x8
+                        || ($permissions & 0x20) === 0x20
+                    );
+
+                    $botPdo = \FoxCraft\Core\BotDatabase::connection();
+
+                    $guildStatement = $botPdo->prepare(
+                        'SELECT guild_id, name, owner_id, icon, is_active, joined_at
+                         FROM discord_guilds
+                         WHERE guild_id = ?
+                           AND is_active = 1
+                         LIMIT 1'
+                    );
+                    $guildStatement->execute([$requestedGuildId]);
+                    $guildRecord = $guildStatement->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$guildRecord) {
+                        http_response_code(404);
+                        $discordManageError = 'Foxcraftservice ya no está conectado a este servidor.';
+                    } else {
+                        $settingsStatement = $botPdo->prepare(
+                            'SELECT language, timezone, updated_at
+                             FROM guild_settings
+                             WHERE guild_id = ?
+                             LIMIT 1'
+                        );
+                        $settingsStatement->execute([$requestedGuildId]);
+                        $guildSettings = $settingsStatement->fetch(PDO::FETCH_ASSOC) ?: [];
+
+                        $discordManageData = [
+                            'guild' => $guildRecord,
+                            'settings' => [
+                                'language' => (string)($guildSettings['language'] ?? 'es'),
+                                'timezone' => (string)($guildSettings['timezone'] ?? 'America/Argentina/Buenos_Aires'),
+                                'updated_at' => $guildSettings['updated_at'] ?? null,
+                            ],
+                            'role' => $isGuildOwner
+                                ? 'Propietario'
+                                : ($canManageGuild ? 'Administrador' : 'Sin permisos'),
+                            'can_edit' => $isGuildOwner || $canManageGuild,
+                            'managed_guild' => $managedGuild,
+                        ];
+                    }
+                }
+            }
+        } catch (Throwable $exception) {
+            error_log('FoxCraft Discord manage: ' . $exception->getMessage());
+            http_response_code(503);
+            $discordManageError = 'No se pudo cargar el panel del servidor. Intentá nuevamente más tarde.';
+        }
+    }
+}
+
 if ($page === 'admin' && !$isAdmin) {
     if (empty($_SESSION['user_id'])) {
         header('Location: /?page=login', true, 303);
@@ -223,10 +630,254 @@ if ($page === 'admin' && !$isAdmin) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string)($_POST['csrf_token'] ?? '');
 
-    if (!hash_equals((string)$_SESSION['csrf_token'], $token)) {
+    if (!hash_equals((string)($_SESSION['csrf_token'] ?? ''), $token)) {
+        if ($page === 'discord-manage') {
+            $_SESSION['flash'] = 'El formulario venció. Recargá la página e intentá nuevamente.';
+
+            $guildId = (string)($_GET['id'] ?? '');
+
+            header(
+                'Location: /?page=discord-manage&id=' . rawurlencode($guildId),
+                true,
+                303
+            );
+            return;
+        }
+
         $errors[] = 'El formulario venció. Recargá la página e intentá nuevamente.';
+
     } elseif (!$pdo) {
         $errors[] = 'El servicio no está disponible en este momento.';
+
+    } elseif ($page === 'discord-manage') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            return;
+        }
+
+        $requestedGuildId = (string)($_GET['id'] ?? '');
+
+        if (!preg_match('/\A[0-9]{17,20}\z/', $requestedGuildId)) {
+            $errors[] = 'El servidor seleccionado no es válido.';
+        } else {
+            try {
+                require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
+                require_once APP_ROOT . '/Core/BotDatabase.php';
+
+                $manageUserId = (int)$_SESSION['user_id'];
+
+                $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
+                $discordAccount = $discordRepository->findByUserId($manageUserId);
+
+                if (!$discordAccount) {
+                    $_SESSION['flash'] = 'Primero tenés que vincular tu cuenta Discord.';
+                    header('Location: /?page=discord-link', true, 303);
+                    return;
+                }
+
+                $guildCache = $_SESSION['discord_managed_guilds'] ?? null;
+
+                $validCache = (
+                    is_array($guildCache)
+                    && (int)($guildCache['user_id'] ?? 0) === $manageUserId
+                    && isset($guildCache['discord_user_id'])
+                    && hash_equals(
+                        (string)$discordAccount['discord_user_id'],
+                        (string)$guildCache['discord_user_id']
+                    )
+                    && (int)($guildCache['fetched_at'] ?? 0) >= time() - 900
+                    && is_array($guildCache['guilds'] ?? null)
+                );
+
+                if (!$validCache) {
+                    $_SESSION['flash'] = 'La autorización de Discord venció. Actualizá tus servidores.';
+                    header('Location: /?page=discord-guilds', true, 303);
+                    return;
+                }
+
+                $managedGuild = null;
+
+                foreach ($guildCache['guilds'] as $candidateGuild) {
+                    if (
+                        is_array($candidateGuild)
+                        && isset($candidateGuild['id'])
+                        && is_string($candidateGuild['id'])
+                        && hash_equals($requestedGuildId, $candidateGuild['id'])
+                    ) {
+                        $managedGuild = $candidateGuild;
+                        break;
+                    }
+                }
+
+                if ($managedGuild === null) {
+                    http_response_code(403);
+                    $errors[] = 'No tenés permisos para administrar este servidor.';
+                } else {
+                    $permissionsRaw = (string)($managedGuild['permissions'] ?? '0');
+
+                    $permissions = (
+                        PHP_INT_SIZE >= 8
+                        && preg_match('/\A[0-9]{1,18}\z/', $permissionsRaw)
+                    ) ? (int)$permissionsRaw : 0;
+
+                    $isGuildOwner = !empty($managedGuild['owner']);
+
+                    $canManageGuild = (
+                        ($permissions & 0x8) === 0x8
+                        || ($permissions & 0x20) === 0x20
+                    );
+
+                    if (!$isGuildOwner && !$canManageGuild) {
+                        http_response_code(403);
+                        $errors[] = 'No tenés permisos suficientes para modificar este servidor.';
+                    } else {
+                        $language = (string)($_POST['language'] ?? '');
+                        $timezone = (string)($_POST['timezone'] ?? '');
+
+                        $allowedLanguages = ['es', 'en'];
+
+                        $allowedTimezones = DateTimeZone::listIdentifiers(DateTimeZone::ALL);
+                        $allowedTimezones[] = 'UTC';
+
+                        if (!in_array($language, $allowedLanguages, true)) {
+                            $errors[] = 'El idioma seleccionado no es válido.';
+                        } elseif (!in_array($timezone, $allowedTimezones, true)) {
+                            $errors[] = 'La zona horaria seleccionada no es válida.';
+                        } else {
+                            $botPdo = \FoxCraft\Core\BotDatabase::connection();
+
+                            $guildStatement = $botPdo->prepare(
+                                'SELECT guild_id
+                                 FROM discord_guilds
+                                 WHERE guild_id = ?
+                                   AND is_active = 1
+                                 LIMIT 1'
+                            );
+                            $guildStatement->execute([$requestedGuildId]);
+
+                            if (!$guildStatement->fetch(PDO::FETCH_ASSOC)) {
+                                $_SESSION['flash'] = 'Foxcraftservice ya no está conectado a ese servidor.';
+                                header('Location: /?page=profile', true, 303);
+                                return;
+                            }
+
+                            $botPdo->beginTransaction();
+
+                            try {
+                                $previousStatement = $botPdo->prepare(
+                                    'SELECT language, timezone
+                                     FROM guild_settings
+                                     WHERE guild_id = ?
+                                     LIMIT 1
+                                     FOR UPDATE'
+                                );
+                                $previousStatement->execute([$requestedGuildId]);
+
+                                $previousSettings = $previousStatement->fetch(PDO::FETCH_ASSOC) ?: [
+                                    'language' => 'es',
+                                    'timezone' => 'America/Argentina/Buenos_Aires',
+                                ];
+
+                                $updateStatement = $botPdo->prepare(
+                                    'INSERT INTO guild_settings
+                                        (guild_id, language, timezone)
+                                     VALUES (?, ?, ?)
+                                     ON DUPLICATE KEY UPDATE
+                                        language = VALUES(language),
+                                        timezone = VALUES(timezone)'
+                                );
+
+                                $updateStatement->execute([
+                                    $requestedGuildId,
+                                    $language,
+                                    $timezone,
+                                ]);
+
+                                $auditDetails = json_encode([
+                                    'before' => [
+                                        'language' => (string)$previousSettings['language'],
+                                        'timezone' => (string)$previousSettings['timezone'],
+                                    ],
+                                    'after' => [
+                                        'language' => $language,
+                                        'timezone' => $timezone,
+                                    ],
+                                ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+                                $auditStatement = $botPdo->prepare(
+                                    'INSERT INTO audit_logs
+                                        (guild_id, actor_discord_id, action, target_id, details)
+                                     VALUES (?, ?, ?, NULL, ?)'
+                                );
+
+                                $auditStatement->execute([
+                                    $requestedGuildId,
+                                    (string)$discordAccount['discord_user_id'],
+                                    'guild.settings.updated',
+                                    $auditDetails,
+                                ]);
+
+                                $botPdo->commit();
+
+                                $_SESSION['flash'] = 'La configuración del servidor se guardó correctamente.';
+
+                                header(
+                                    'Location: /?page=discord-manage&id=' . rawurlencode($requestedGuildId),
+                                    true,
+                                    303
+                                );
+                                return;
+
+                            } catch (Throwable $exception) {
+                                if ($botPdo->inTransaction()) {
+                                    $botPdo->rollBack();
+                                }
+
+                                throw $exception;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $exception) {
+                error_log('FoxCraft Discord settings update: ' . $exception->getMessage());
+                $errors[] = 'No se pudo guardar la configuración del servidor.';
+            }
+        }
+
+        if ($errors) {
+            $_SESSION['flash'] = implode(' ', $errors);
+            header(
+                'Location: /?page=discord-manage&id=' . rawurlencode($requestedGuildId),
+                true,
+                303
+            );
+            return;
+        }
+
+    } elseif ($page === 'discord-unlink') {
+        if (empty($_SESSION['user_id'])) {
+            header('Location: /?page=login', true, 303);
+            exit;
+        }
+
+        try {
+            require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
+
+            $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
+
+            if ($discordRepository->unlink((int)$_SESSION['user_id'])) {
+                $_SESSION['flash'] = 'Tu cuenta Discord fue desvinculada.';
+            } else {
+                $_SESSION['flash'] = 'No tenías una cuenta Discord vinculada.';
+            }
+
+            header('Location: /?page=profile', true, 303);
+            exit;
+        } catch (Throwable $exception) {
+            error_log('FoxCraft Discord unlink: ' . $exception->getMessage());
+            $errors[] = 'No se pudo desvincular tu cuenta Discord.';
+        }
+
     } elseif ($page === 'favorites') {
         if (empty($_SESSION['user_id'])) {
             header('Location: /?page=login', true, 303);
@@ -414,8 +1065,296 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'No se pudo completar la acción social.';
             }
         }
-    } elseif ($page === 'admin' && $isAdmin) {
+    } elseif (($page === 'admin' && $isAdmin) || $page === 'create-content') {
+        $postedContent = [
+            'id' => $page === 'create-content' ? 0 : (int)($_POST['content_id'] ?? 0),
+            'title' => trim((string)($_POST['title'] ?? '')),
+            'slug' => trim(
+                preg_replace(
+                    '/[\s-]+/u',
+                    '-',
+                    strtolower(trim((string)($_POST['slug'] ?? '')))
+                ) ?? ''
+            ),   
+            'category_id' => (int)($_POST['category_id'] ?? 0),
+            'description' => trim((string)($_POST['description'] ?? '')),
+            'image_url' => trim((string)($_POST['image_url'] ?? '')),
+            'download_url' => trim((string)($_POST['download_url'] ?? '')),
+            'platform' => (string)($_POST['platform'] ?? 'both'),
+            'game_versions' => trim((string)($_POST['game_versions'] ?? '')),
+            'status' => $page === 'create-content' ? 'draft' : (string)($_POST['status'] ?? 'draft'),
+            'is_featured' => $page === 'create-content' ? 0 : (isset($_POST['is_featured']) ? 1 : 0),
+        ];
 
+        $editingContent = $postedContent;
+        $editingContent['game_versions'] = json_encode(
+            array_values(array_filter(array_map('trim', explode(',', $postedContent['game_versions'])))),
+            JSON_UNESCAPED_UNICODE
+        );
+
+        $createdFiles = [];
+
+        try {
+            require_once APP_ROOT . '/Repositories/AdminContentRepository.php';
+            require_once APP_ROOT . '/Repositories/CategoryRepository.php';
+
+            $isPublicSubmission = $page === 'create-content';
+            $userId = $isPublicSubmission ? null : (int)($_SESSION['user_id'] ?? 0);
+            $contentId = $postedContent['id'];
+            $categoryId = $postedContent['category_id'];
+            $title = $postedContent['title'];
+            $slug = $postedContent['slug'];
+            $description = $postedContent['description'];
+            $imageUrl = $isPublicSubmission
+                ? null
+                : $postedContent['image_url'];
+
+            $downloadUrl = $postedContent['download_url'];
+            $platform = $postedContent['platform'];
+            $status = $postedContent['status'];
+
+            if (!$isPublicSubmission && $userId <= 0) {
+                throw new RuntimeException('Tu sesión no es válida.');
+            }
+
+            if ($contentId < 0) {
+                throw new RuntimeException('La publicación seleccionada no es válida.');
+            }
+
+            if ($title === '' || mb_strlen($title) > 180) {
+                throw new RuntimeException('El título es obligatorio y admite hasta 180 caracteres.');
+            }
+
+            if (!preg_match('/\A[a-z0-9-]{1,200}\z/', $slug)) {
+                throw new RuntimeException('El slug solo puede contener letras minúsculas, números y guiones.');
+            }
+
+            if ($description === '') {
+                throw new RuntimeException('La descripción es obligatoria.');
+            }
+
+            $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
+
+            if (!$categoryRepository->isActiveById($categoryId)) {
+                throw new RuntimeException('Seleccioná una categoría válida.');
+            }
+
+            if (!in_array($platform, ['both', 'java', 'bedrock', 'other'], true)) {
+                throw new RuntimeException('La plataforma seleccionada no es válida.');
+            }
+
+            if (!in_array($status, ['draft', 'published', 'archived'], true)) {
+                throw new RuntimeException('El estado seleccionado no es válido.');
+            }
+
+            if ($downloadUrl !== '') {
+                $parts = parse_url($downloadUrl);
+
+                if (
+                    !filter_var($downloadUrl, FILTER_VALIDATE_URL)
+                    || !is_array($parts)
+                    || strtolower((string)($parts['scheme'] ?? '')) !== 'https'
+                ) {
+                    throw new RuntimeException('La URL de descarga debe ser HTTPS.');
+                }
+            } else {
+                $downloadUrl = null;
+            }
+
+            // Validar URL o ruta de imagen existente.
+            if ($imageUrl !== null && $imageUrl !== '') {
+                $parts = parse_url($imageUrl);
+
+                if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                    if (
+                        !is_array($parts)
+                        || strtolower((string)($parts['scheme'] ?? '')) !== 'https'
+                    ) {
+                        throw new RuntimeException('La imagen externa debe utilizar HTTPS.');
+                    }
+                } elseif (
+                    !str_starts_with($imageUrl, '/assets/images/')
+                    || str_contains($imageUrl, '..')
+                    || str_contains($imageUrl, '\\')
+                ) {
+                    throw new RuntimeException('La ruta de imagen local no es válida.');
+                }
+            } else {
+                $imageUrl = null;
+            }
+
+            // Procesar imagen subida, si existe.
+            if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+                $file = $_FILES['image_file'];
+
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException('No se pudo recibir la imagen.');
+                }
+
+                if ($file['size'] <= 0 || $file['size'] > 2 * 1024 * 1024) {
+                    throw new RuntimeException('La imagen debe pesar como máximo 2 MB.');
+                }
+
+                $finfo = new \finfo(FILEINFO_MIME_TYPE);
+                $mime = $finfo->file($file['tmp_name']);
+
+                $extensions = [
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                    'image/webp' => 'webp',
+                ];
+
+                if (!isset($extensions[$mime])) {
+                    throw new RuntimeException('Formato no permitido. Usá JPG, PNG o WebP.');
+                }
+
+                $imageInfo = getimagesize($file['tmp_name']);
+
+                if (
+                    !$imageInfo
+                    || $imageInfo[0] > 4096
+                    || $imageInfo[1] > 4096
+                    || ($imageInfo[0] * $imageInfo[1]) > 16000000
+                    || $imageInfo['mime'] !== $mime
+                ) {
+                    throw new RuntimeException('La imagen tiene dimensiones o contenido no válido.');
+                }
+
+                $imageDirectory = PROJECT_ROOT . '/public/assets/images/content';
+                $webpDirectory = PROJECT_ROOT . '/public/assets/images-webp/content';
+
+                if (
+                    !is_dir($imageDirectory) && !mkdir($imageDirectory, 0755, true)
+                ) {
+                    throw new RuntimeException('No se pudo crear la carpeta de imágenes.');
+                }
+
+                if (
+                    !is_dir($webpDirectory) && !mkdir($webpDirectory, 0755, true)
+                ) {
+                    throw new RuntimeException('No se pudo crear la carpeta de imágenes WebP.');
+                }
+
+                $filename = bin2hex(random_bytes(16));
+                $extension = $extensions[$mime];
+
+                $originalPath = $imageDirectory . '/' . $filename . '.' . $extension;
+                $imageUrl = '/assets/images/content/' . $filename . '.' . $extension;
+
+                if (!move_uploaded_file($file['tmp_name'], $originalPath)) {
+                    throw new RuntimeException('No se pudo guardar la imagen original.');
+                }
+
+                $createdFiles[] = $originalPath;
+
+                // Las imágenes JPG y PNG generan una versión WebP.
+                if ($mime !== 'image/webp') {
+                    $source = match ($mime) {
+                        'image/jpeg' => imagecreatefromjpeg($originalPath),
+                        'image/png' => imagecreatefrompng($originalPath),
+                        default => false,
+                    };
+
+                    if (!$source) {
+                        throw new RuntimeException('No se pudo procesar la imagen.');
+                    }
+
+                    if ($mime === 'image/png') {
+                        imagealphablending($source, false);
+                        imagesavealpha($source, true);
+                    }
+
+                    $webpPath = $webpDirectory . '/' . $filename . '.webp';
+                    $createdFiles[] = $webpPath;
+
+                    $webpSaved = imagewebp($source, $webpPath, 82);
+                    imagedestroy($source);
+
+                    if (!$webpSaved) {
+                        throw new RuntimeException('No se pudo generar la versión WebP.');
+                    }
+
+                    $createdFiles[] = $webpPath;
+                }
+            }
+
+            // Evitar duplicados de slug dentro de la misma categoría.
+            if ($isPublicSubmission && $imageUrl === null) {
+                throw new RuntimeException('Tenés que subir una imagen de portada.');
+            }
+
+            $duplicate = $pdo->prepare(
+                'SELECT id FROM contents
+                WHERE category_id = :category_id
+                AND slug = :slug
+                AND id <> :content_id
+                LIMIT 1'
+            );
+
+            $duplicate->execute([
+                'category_id' => $categoryId,
+                'slug' => $slug,
+                'content_id' => $contentId,
+            ]);
+
+            if ($duplicate->fetchColumn()) {
+                throw new RuntimeException('Ya existe una publicación con ese slug en la categoría.');
+            }
+
+            $versions = array_values(array_unique(array_filter(
+                array_map('trim', explode(',', $postedContent['game_versions'])),
+                static fn(string $version): bool => $version !== ''
+            )));
+
+            $versionsJson = json_encode(
+                $versions,
+                JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+            );
+
+            $repository = new \FoxCraft\Repositories\AdminContentRepository($pdo);
+
+            $repository->save(
+                $contentId,
+                $categoryId,
+                $userId,
+                $title,
+                $slug,
+                $description,
+                $imageUrl,
+                $downloadUrl,
+                'download',
+                $platform,
+                $versionsJson,
+                $postedContent['is_featured'],
+                $status
+            );
+
+            $_SESSION['flash'] = $isPublicSubmission
+                ? 'Tu propuesta fue enviada correctamente y será revisada por nuestro equipo.'
+                : ($contentId > 0
+                    ? 'Publicación actualizada correctamente.'
+                    : 'Publicación creada correctamente.');
+
+            $redirect = $isPublicSubmission
+                ? '/?page=create-content'
+                : '/?page=admin';
+
+            header('Location: ' . $redirect, true, 303);
+            exit;
+
+        } catch (Throwable $exception) {
+            foreach ($createdFiles as $createdFile) {
+                if (is_file($createdFile)) {
+                    @unlink($createdFile);
+                }
+            }
+
+            error_log('FoxCraft admin content: ' . $exception->getMessage());
+
+            $errors[] = $exception instanceof RuntimeException
+                ? $exception->getMessage()
+                : 'No se pudo guardar la publicación. Revisá los datos e intentá nuevamente.';
+        }
     } elseif ($page === 'edit-profile') {
         if (empty($_SESSION['user_id'])) {
             header('Location: /?page=login', true, 303);
@@ -949,7 +1888,10 @@ if ($pdo) {
     try {
         require_once APP_ROOT . '/Repositories/CategoryRepository.php';
         $categoryRepository = new \FoxCraft\Repositories\CategoryRepository($pdo);
-        $categories = $categoryRepository->findActive();
+
+        $categories = $page === 'create-content'
+            ? $categoryRepository->findForSubmission()
+            : $categoryRepository->findActive();
 
         require_once APP_ROOT . '/Repositories/ContentRepository.php';
         $contentRepository = new \FoxCraft\Repositories\ContentRepository($pdo);
@@ -1021,12 +1963,96 @@ if ($pdo) {
                 if ($isOwnProfile) {
                     require_once APP_ROOT . '/Repositories/FavoriteRepository.php';
                     require_once APP_ROOT . '/Repositories/LikeRepository.php';
+                    require_once APP_ROOT . '/Repositories/DiscordAccountRepository.php';
 
                     $favoriteRepository = new \FoxCraft\Repositories\FavoriteRepository($pdo);
                     $likeRepository = new \FoxCraft\Repositories\LikeRepository($pdo);
+                    $discordRepository = new \FoxCraft\Repositories\DiscordAccountRepository($pdo);
 
                     $favoriteContents = $favoriteRepository->findByUserId($profileUserId);
                     $likedContents = $likeRepository->findByUserId($profileUserId);
+                    $discordAccount = $discordRepository->findByUserId($profileUserId);
+
+                    $discordManagedGuilds = [];
+                    $discordInstalledGuilds = [];
+                    $discordGuildsChecked = false;
+                    $discordClientId = '';
+
+                    $guildCache = $_SESSION['discord_managed_guilds'] ?? null;
+
+                    if (
+                        is_array($guildCache)
+                        && $discordAccount
+                        && (int)($guildCache['user_id'] ?? 0) === $profileUserId
+                        && isset($guildCache['discord_user_id'])
+                        && hash_equals(
+                            (string)$discordAccount['discord_user_id'],
+                            (string)$guildCache['discord_user_id']
+                        )
+                        && (int)($guildCache['fetched_at'] ?? 0) >= time() - 900
+                        && is_array($guildCache['guilds'] ?? null)
+                    ) {
+                        $discordManagedGuilds = $guildCache['guilds'];
+
+                        $guildIds = [];
+
+                        foreach ($discordManagedGuilds as $guild) {
+                            if (
+                                is_array($guild)
+                                && isset($guild['id'])
+                                && is_string($guild['id'])
+                                && preg_match('/^[0-9]{17,20}$/', $guild['id'])
+                            ) {
+                                $guildIds[] = $guild['id'];
+                            }
+                        }
+
+                        $guildIds = array_values(array_unique($guildIds));
+
+                        try {
+                            require_once APP_ROOT . '/Core/BotDatabase.php';
+
+                            if ($guildIds !== []) {
+                                $botPdo = \FoxCraft\Core\BotDatabase::connection();
+                                $placeholders = implode(',', array_fill(0, count($guildIds), '?'));
+
+                                $guildStatement = $botPdo->prepare(
+                                    'SELECT guild_id
+                                     FROM discord_guilds
+                                     WHERE is_active = 1
+                                       AND guild_id IN (' . $placeholders . ')'
+                                );
+
+                                $guildStatement->execute($guildIds);
+
+                                foreach ($guildStatement->fetchAll(PDO::FETCH_COLUMN) as $installedGuildId) {
+                                    $discordInstalledGuilds[(string)$installedGuildId] = true;
+                                }
+                            }
+
+                            $discordGuildsChecked = true;
+                        } catch (Throwable $exception) {
+                            error_log('FoxCraft Discord guild installation check: ' . $exception->getMessage());
+                        }
+                    }
+
+                    try {
+                        $discordConfigPath = '/etc/foxcraft/discord.php';
+
+                        if (is_readable($discordConfigPath)) {
+                            $discordConfig = require $discordConfigPath;
+
+                            if (
+                                is_array($discordConfig)
+                                && isset($discordConfig['client_id'])
+                                && is_string($discordConfig['client_id'])
+                            ) {
+                                $discordClientId = $discordConfig['client_id'];
+                            }
+                        }
+                    } catch (Throwable $exception) {
+                        error_log('FoxCraft Discord client configuration: ' . $exception->getMessage());
+                    }
                 }
             }
         }
@@ -1046,6 +2072,31 @@ if ($pdo) {
 
         if (in_array($page, array_column($categories, 'slug'), true)) {
             $categoryId = $categoryRepository->findActiveIdBySlug($page);
+        }
+
+        $categoryGroups = [
+            'mods' => ['mods', 'addons', 'modpacks'],
+            'resource-packs' => ['resource-packs', 'texture-packs', 'shaders'],
+        ];
+
+        if (isset($categoryGroups[$page])) {
+            $activeCategoryIds = [];
+
+            foreach ($categories as $category) {
+                if (in_array($category['slug'], $categoryGroups[$page], true)) {
+                    $activeCategoryIds[] = (int) $category['id'];
+                }
+            }
+
+            $categoryId = $activeCategoryIds;
+
+            // Impide filtrar por una categoría ajena a este catálogo.
+            if (
+                $filterCategory !== null
+                && !in_array($filterCategory, $activeCategoryIds, true)
+            ) {
+                $filterCategory = null;
+            }
         }
 
         if ($page === 'skins') {
@@ -1152,7 +2203,7 @@ if ($pdo) {
             $contents = [];
         } elseif ($categoryId !== null) {
             $totalContents = $contentRepository->countPublishedByCategory(
-                (int) $categoryId
+                $categoryId
             );
 
             $totalPages = max(
@@ -1164,7 +2215,7 @@ if ($pdo) {
             $offset = ($currentPage - 1) * $itemsPerPage;
 
             $contents = $contentRepository->findPublishedByCategory(
-                (int) $categoryId,
+                $categoryId,
                 $itemsPerPage,
                 $offset
             );
@@ -1379,6 +2430,9 @@ if ($pdo) {
         <?php endif; ?>
     </section>
 
+<?php elseif ($page === 'create-content'): ?>
+    <?php require APP_ROOT . '/Views/Content/create.php'; ?>
+
 <?php elseif ($page === 'admin' && !$isAdmin): ?>
     <section class="page-banner">
         <span class="eyebrow">ACCESO RESTRINGIDO</span>
@@ -1389,6 +2443,9 @@ if ($pdo) {
 
 <?php elseif ($page === 'admin' && $isAdmin): ?>
     <?php require APP_ROOT . '/Views/Admin/content.php'; ?>
+
+<?php elseif ($page === 'discord-manage'): ?>
+    <?php require APP_ROOT . '/Views/Discord/manage.php'; ?>
 
 <?php elseif ($page === 'edit-profile'): ?>
     <?php require APP_ROOT . '/Views/Profile/edit.php'; ?>

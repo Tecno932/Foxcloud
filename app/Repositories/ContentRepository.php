@@ -30,12 +30,15 @@ final class ContentRepository
     }
 
     public function findPublishedByCategory(
-        int $categoryId,
+        int|array $categoryId,
         int $limit = 12,
         int $offset = 0
     ): array {
         $limit = max(1, min($limit, 100));
         $offset = max(0, $offset);
+
+        $params = [];
+        $categoryCondition = $this->buildCategoryCondition($categoryId, $params);
 
         $query = $this->pdo->prepare(
             "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
@@ -44,36 +47,39 @@ final class ContentRepository
             FROM contents c
             JOIN categories cat ON cat.id = c.category_id
             WHERE c.status = 'published'
-            AND c.category_id = :category_id
+            AND {$categoryCondition}
             AND cat.is_active = 1
             ORDER BY c.created_at DESC
             LIMIT {$limit} OFFSET {$offset}"
         );
 
-        $query->execute(['category_id' => $categoryId]);
+        $query->execute($params);
 
         return $query->fetchAll();
     }
 
-    public function countPublishedByCategory(int $categoryId): int
+    public function countPublishedByCategory(int|array $categoryId): int
     {
+        $params = [];
+        $categoryCondition = $this->buildCategoryCondition($categoryId, $params);
+
         $query = $this->pdo->prepare(
             "SELECT COUNT(*)
             FROM contents c
             JOIN categories cat ON cat.id = c.category_id
             WHERE c.status = 'published'
-            AND c.category_id = :category_id
+            AND {$categoryCondition}
             AND cat.is_active = 1"
         );
 
-        $query->execute(['category_id' => $categoryId]);
+        $query->execute($params);
 
-        return (int)$query->fetchColumn();
+        return (int) $query->fetchColumn();
     }
 
     public function searchPublished(
         string $search = '',
-        ?int $categoryId = null,
+        int|array|null $categoryId = null,
         string $platform = '',
         string $version = '',
         int $limit = 12,
@@ -89,7 +95,15 @@ final class ContentRepository
         ];
 
         if ($explorerOnly) {
-            $conditions[] = "cat.slug IN ('mods', 'maps', 'resource-packs')";
+            $conditions[] = "cat.slug IN (
+                'mods',
+                'addons',
+                'modpacks',
+                'maps',
+                'resource-packs',
+                'texture-packs',
+                'shaders'
+            )";
         }
 
         $params = [];
@@ -99,9 +113,8 @@ final class ContentRepository
             $params['search'] = '%' . $search . '%';
         }
 
-        if ($categoryId !== null && $categoryId > 0) {
-            $conditions[] = 'c.category_id = :category_id';
-            $params['category_id'] = $categoryId;
+        if ($categoryId !== null) {
+            $conditions[] = $this->buildCategoryCondition($categoryId, $params);
         }
 
         if (in_array($platform, ['java', 'bedrock'], true)) {
@@ -136,7 +149,7 @@ final class ContentRepository
 
     public function countSearchPublished(
         string $search = '',
-        ?int $categoryId = null,
+        int|array|null $categoryId = null,
         string $platform = '',
         string $version = '',
         bool $explorerOnly = false
@@ -147,7 +160,15 @@ final class ContentRepository
         ];
 
         if ($explorerOnly) {
-            $conditions[] = "cat.slug IN ('mods', 'maps', 'resource-packs')";
+            $conditions[] = "cat.slug IN (
+                'mods',
+                'addons',
+                'modpacks',
+                'maps',
+                'resource-packs',
+                'texture-packs',
+                'shaders'
+            )";
         }
 
         $params = [];
@@ -157,9 +178,8 @@ final class ContentRepository
             $params['search'] = '%' . $search . '%';
         }
 
-        if ($categoryId !== null && $categoryId > 0) {
-            $conditions[] = 'c.category_id = :category_id';
-            $params['category_id'] = $categoryId;
+        if ($categoryId !== null) {
+            $conditions[] = $this->buildCategoryCondition($categoryId, $params);
         }
 
         if (in_array($platform, ['java', 'bedrock'], true)) {
@@ -300,5 +320,29 @@ final class ContentRepository
         $query->execute(['id' => $contentId]);
 
         return $query->fetch() ?: null;
+    }
+
+    private function buildCategoryCondition(int|array $categoryIds, array &$params): string
+    {
+        $categoryIds = is_array($categoryIds) ? $categoryIds : [$categoryIds];
+
+        $categoryIds = array_values(array_unique(array_filter(
+            array_map('intval', $categoryIds),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        if ($categoryIds === []) {
+            return '1 = 0';
+        }
+
+        $placeholders = [];
+
+        foreach ($categoryIds as $index => $id) {
+            $key = 'category_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $id;
+        }
+
+        return 'c.category_id IN (' . implode(', ', $placeholders) . ')';
     }
 }

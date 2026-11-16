@@ -165,6 +165,160 @@
                 <?php endif; ?>
             </div>
 
+                        <?php if ($isOwnProfile): ?>
+                <section class="discord-account-card">
+                    <div class="discord-account-info">
+                        <span class="discord-account-label">CUENTA DISCORD</span>
+
+                        <?php if (!empty($discordAccount)): ?>
+                            <h2>
+                                <?= e(
+                                    $discordAccount['global_name']
+                                    ?: $discordAccount['username']
+                                ) ?>
+                            </h2>
+
+                            <p>
+                                @<?= e($discordAccount['username']) ?>
+                            </p>
+
+                            <span class="discord-account-status">
+                                Cuenta vinculada
+                            </span>
+                        <?php else: ?>
+                            <h2>Conectá tu Discord</h2>
+
+                            <p>
+                                Vinculá tu cuenta para conectar tu identidad
+                                de Discord con tu perfil FoxCraft.
+                            </p>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (!empty($discordAccount)): ?>
+                        <form
+                            method="post"
+                            action="/?page=discord-unlink"
+                            onsubmit="return confirm('¿Querés desvincular tu cuenta Discord de FoxCraft?');"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf_token"
+                                value="<?= e($_SESSION['csrf_token'] ?? '') ?>"
+                            >
+
+                            <button type="submit" class="button">
+                                Desvincular Discord
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <a
+                            class="button button-primary"
+                            href="/?page=discord-link"
+                        >
+                            Vincular Discord
+                        </a>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
+
+            <?php if ($isOwnProfile && !empty($discordAccount)): ?>
+                <section class="discord-guilds-card">
+                    <div class="discord-guilds-heading">
+                        <div>
+                            <span class="discord-account-label">INTEGRACIÓN CON DISCORD</span>
+                            <h2>Mis servidores</h2>
+                            <p>Servidores que administrás con la cuenta Discord vinculada.</p>
+                        </div>
+                        <a class="button button-primary" href="/?page=discord-guilds">
+                            <?= empty($discordManagedGuilds) && !$discordGuildsChecked ? 'Consultar servidores' : 'Actualizar lista' ?>
+                        </a>
+                    </div>
+
+                    <?php if (!empty($discordManagedGuilds)): ?>
+                        <div class="discord-guild-list">
+                            <?php foreach ($discordManagedGuilds as $guild): ?>
+                                <?php
+                                $guildId = (string)($guild['id'] ?? '');
+                                $guildName = (string)($guild['name'] ?? 'Servidor Discord');
+                                $guildInstalled = isset($discordInstalledGuilds[$guildId]);
+                                $guildInviteUrl = '';
+
+                                if (
+                                    !$guildInstalled
+                                    && $discordGuildsChecked
+                                    && $discordClientId !== ''
+                                    && preg_match('/^[0-9]{17,20}$/', $guildId)
+                                ) {
+                                    $guildInviteUrl = 'https://discord.com/oauth2/authorize?' . http_build_query([
+                                        'client_id' => $discordClientId,
+                                        'scope' => 'bot applications.commands',
+                                        'permissions' => '0',
+                                        'guild_id' => $guildId,
+                                        'disable_guild_select' => 'true',
+                                    ], '', '&', PHP_QUERY_RFC3986);
+                                }
+                                ?>
+                                <article class="discord-guild-item">
+                                    <div class="discord-guild-details">
+                                        <h3><?= e($guildName) ?></h3>
+                                        <span class="discord-guild-id">ID: <?= e($guildId) ?></span>
+
+                                        <?php if ($guildInstalled): ?>
+                                            <span class="discord-guild-status is-installed">
+                                                Foxcraftservice está instalado
+                                            </span>
+                                        <?php elseif ($discordGuildsChecked): ?>
+                                            <span class="discord-guild-status is-not-installed">
+                                                Foxcraftservice no está instalado
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="discord-guild-status is-unknown">
+                                                No se pudo comprobar la instalación
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+
+                                    <?php if ($guildInviteUrl !== ''): ?>
+                                        <div class="discord-guild-actions">
+                                            <a
+                                                class="button button-primary"
+                                                href="<?= e($guildInviteUrl) ?>"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                Invitar Foxcraftservice
+                                            </a>
+                                        </div>
+                                    <?php elseif ($guildInstalled): ?>
+                                        <a
+                                            class="button button-primary"
+                                            href="/?page=discord-manage&amp;id=<?= rawurlencode($guildId) ?>"
+                                        >
+                                            Administrar servidor
+                                        </a>
+                                    <?php endif; ?>
+                                </article>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php elseif ($discordGuildsChecked): ?>
+                        <p class="discord-guilds-empty">
+                            Discord no devolvió servidores que administres con esta cuenta.
+                        </p>
+                    <?php else: ?>
+                        <p class="discord-guilds-empty">
+                            Consultá tus servidores para comprobar dónde está instalado Foxcraftservice.
+                        </p>
+                    <?php endif; ?>
+
+                    <?php if (!empty($discordManagedGuilds) && !$discordGuildsChecked): ?>
+                        <p class="discord-guilds-warning">
+                            No se pudo verificar el estado de instalación. Actualizá la lista más tarde.
+                        </p>
+                    <?php endif; ?>
+                </section>
+            <?php endif; ?>
+
             <dialog class="profile-social-dialog" data-social-dialog>
                 <div class="profile-social-dialog-header">
                     <h2 data-social-dialog-title></h2>

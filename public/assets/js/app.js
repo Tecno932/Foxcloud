@@ -589,3 +589,209 @@ document.querySelectorAll('[data-social-dialog]').forEach((dialog) => {
         }
     });
 });
+
+// Asistente de creación de contenido
+const contentWizard = document.querySelector('[data-content-wizard]');
+
+if (contentWizard) {
+    const steps = [...contentWizard.querySelectorAll('[data-wizard-step]')];
+    const progressItems = contentWizard.querySelectorAll('[data-wizard-progress]');
+    const platformInputs = contentWizard.querySelectorAll('input[name="platform"]');
+    const categorySelect = contentWizard.querySelector('#content-category');
+    const coverInput = contentWizard.querySelector('[data-cover-input]');
+    const coverPreview = contentWizard.querySelector('[data-cover-preview]');
+    const slugInput = contentWizard.querySelector('[data-slug-input]');
+
+    let currentStep = 1;
+    let coverObjectUrl = null;
+
+    // Mostrar una etapa y desactivar las demás.
+    const showStep = (stepNumber) => {
+        currentStep = stepNumber;
+
+        steps.forEach((step) => {
+            const isActive = Number(step.dataset.wizardStep) === stepNumber;
+
+            step.hidden = !isActive;
+            step.disabled = !isActive;
+        });
+
+        progressItems.forEach((item) => {
+            const number = Number(item.dataset.wizardProgress);
+
+            item.classList.toggle('is-active', number === stepNumber);
+            item.classList.toggle('is-complete', number < stepNumber);
+        });
+
+        contentWizard.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+    };
+
+    // Validar la etapa actual antes de avanzar.
+    const validateCurrentStep = () => {
+        const currentFieldset = steps.find(
+            (step) => Number(step.dataset.wizardStep) === currentStep
+        );
+
+        if (!currentFieldset.checkValidity()) {
+            currentFieldset.reportValidity();
+            return false;
+        }
+
+        return true;
+    };
+
+    // Navegación.
+    contentWizard.querySelectorAll('[data-wizard-next]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (!validateCurrentStep()) return;
+
+            if (currentStep < steps.length) {
+                showStep(currentStep + 1);
+            }
+        });
+    });
+
+    contentWizard.querySelectorAll('[data-wizard-back]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (currentStep > 1) {
+                showStep(currentStep - 1);
+            }
+        });
+    });
+
+    // Normalizar slug.
+    if (slugInput) {
+        slugInput.addEventListener('input', () => {
+            slugInput.value = slugInput.value
+                .toLowerCase()
+                .replace(/[\s-]+/g, '-')
+                .replace(/^-+|-+$/g, '');
+        });
+    }
+
+    // Filtrar categorías según plataforma.
+    const updateCategories = (resetSelection = true) => {
+        const selectedPlatform = contentWizard.querySelector(
+            'input[name="platform"]:checked'
+        )?.value;
+
+        if (!selectedPlatform || !categorySelect) return;
+
+        [...categorySelect.options].forEach((option) => {
+            if (!option.value) {
+                option.hidden = false;
+                option.disabled = false;
+                return;
+            }
+
+            const platforms = (option.dataset.platforms || '').split(' ');
+            const available = platforms.includes(selectedPlatform);
+
+            option.hidden = !available;
+            option.disabled = !available;
+        });
+
+        if (
+            resetSelection ||
+            categorySelect.selectedOptions[0]?.disabled
+        ) {
+            categorySelect.value = '';
+        }
+    };
+
+    platformInputs.forEach((input) => {
+        input.addEventListener('change', () => {
+            updateCategories(true);
+        });
+    });
+
+    updateCategories(false);
+
+    // Vista previa y validación de portada.
+    if (coverInput && coverPreview) {
+        coverInput.addEventListener('change', () => {
+            const file = coverInput.files?.[0];
+
+            if (coverObjectUrl) {
+                URL.revokeObjectURL(coverObjectUrl);
+                coverObjectUrl = null;
+            }
+
+            coverPreview.replaceChildren();
+
+            if (!file) {
+                coverPreview.textContent = 'Vista previa de portada';
+                return;
+            }
+
+            const allowedTypes = [
+                'image/jpeg',
+                'image/png',
+                'image/webp'
+            ];
+
+            if (!allowedTypes.includes(file.type)) {
+                coverInput.setCustomValidity(
+                    'Seleccioná una imagen JPG, PNG o WebP.'
+                );
+                coverInput.value = '';
+                coverPreview.textContent = 'Formato no permitido';
+                coverInput.reportValidity();
+                return;
+            }
+
+            if (file.size > 2 * 1024 * 1024) {
+                coverInput.setCustomValidity(
+                    'La imagen no puede superar los 2 MB.'
+                );
+                coverInput.value = '';
+                coverPreview.textContent = 'La imagen supera los 2 MB';
+                coverInput.reportValidity();
+                return;
+            }
+
+            coverInput.setCustomValidity('');
+
+            coverObjectUrl = URL.createObjectURL(file);
+
+            const image = document.createElement('img');
+            image.src = coverObjectUrl;
+            image.alt = 'Vista previa de portada';
+
+            coverPreview.appendChild(image);
+        });
+    }
+
+    // Validación final antes de enviar.
+    contentWizard.addEventListener('submit', (event) => {
+        // Habilitar todas las etapas para validar y enviar sus campos.
+        steps.forEach((step) => {
+            step.disabled = false;
+            step.hidden = false;
+        });
+
+        if (!contentWizard.checkValidity()) {
+            event.preventDefault();
+
+            const invalidField = contentWizard.querySelector(':invalid');
+
+            if (invalidField) {
+                const invalidStep = invalidField.closest('[data-wizard-step]');
+
+                if (invalidStep) {
+                    showStep(Number(invalidStep.dataset.wizardStep));
+                }
+
+                invalidField.reportValidity();
+            }
+
+            return;
+        }
+    });
+
+    // Iniciar en la primera etapa.
+    showStep(1);
+}

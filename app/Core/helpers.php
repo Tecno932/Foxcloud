@@ -37,7 +37,7 @@ if (!function_exists('image_display_url')) {
 
         $webpFile = PROJECT_ROOT . '/public' . rawurldecode($webpPath);
 
-        if (!is_file($webpFile)) {
+        if (!is_file($webpFile) || filesize($webpFile) <= 0) {
             return $imageUrl;
         }
 

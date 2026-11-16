@@ -24,12 +24,34 @@
                     <option value="">Todas las categorías</option>
                     <?php foreach ($categories as $category): ?>
                         <?php
-                        if (
-                            $page === 'explorer'
-                            && !in_array($category['slug'], ['mods', 'maps', 'resource-packs'], true)
-                        ) {
-                            continue;
-                        }
+                            $visibleCategories = [
+                                'explorer' => [
+                                    'mods',
+                                    'addons',
+                                    'modpacks',
+                                    'maps',
+                                    'resource-packs',
+                                    'texture-packs',
+                                    'shaders',
+                                ],
+                                'mods' => [
+                                    'mods',
+                                    'addons',
+                                    'modpacks',
+                                ],
+                                'resource-packs' => [
+                                    'resource-packs',
+                                    'texture-packs',
+                                    'shaders',
+                                ],
+                            ];
+
+                            if (
+                                isset($visibleCategories[$page])
+                                && !in_array($category['slug'], $visibleCategories[$page], true)
+                            ) {
+                                continue;
+                            }
                         ?>
                         <option value="<?= (int)$category['id'] ?>"
                             <?= $currentCategory === (int)$category['id'] ? 'selected' : '' ?>>

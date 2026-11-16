@@ -41,7 +41,6 @@ final class CategoryRepository
         return $id === false ? false : (int) $id;
     }
 
-
     public function isActiveById(int $categoryId): bool
     {
         $query = $this->pdo->prepare(
@@ -56,4 +55,24 @@ final class CategoryRepository
         return $query->fetchColumn() !== false;
     }
 
+    public function findForSubmission(): array
+    {
+        $query = $this->pdo->query(
+            "SELECT id, name, slug, description
+             FROM categories
+             WHERE is_active = 1
+               AND slug IN (
+                   'mods',
+                   'modpacks',
+                   'maps',
+                   'texture-packs',
+                   'shaders',
+                   'scripts',
+                   'addons'
+               )
+             ORDER BY sort_order, name"
+        );
+
+        return $query->fetchAll();
+    }
 }

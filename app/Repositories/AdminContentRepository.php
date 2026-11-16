@@ -18,7 +18,7 @@ final class AdminContentRepository
     public function save(
         int $contentId,
         int $categoryId,
-        int $authorId,
+        ?int $authorId,
         string $title,
         string $slug,
         string $description,
