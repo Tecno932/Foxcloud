@@ -20,6 +20,7 @@ final class AdminContentRepository
         int $categoryId,
         ?int $authorId,
         string $title,
+        string $introduction,
         string $slug,
         string $description,
         ?string $imageUrl,
@@ -36,17 +37,19 @@ final class AdminContentRepository
             if ($contentId > 0) {
                 $save = $this->pdo->prepare(
                     'UPDATE contents
-                     SET category_id = :category_id, title = :title, slug = :slug,
-                         description = :description, image_url = :image_url,
-                         download_url = :download_url, content_type = :content_type,
-                         platform = :platform, game_versions = :game_versions,
-                         is_featured = :is_featured, status = :status
-                     WHERE id = :id'
+                    SET category_id = :category_id, title = :title, slug = :slug,
+                        introduction = :introduction,
+                        description = :description, image_url = :image_url,
+                        download_url = :download_url, content_type = :content_type,
+                        platform = :platform, game_versions = :game_versions,
+                        is_featured = :is_featured, status = :status
+                    WHERE id = :id'
                 );
 
                 $save->execute([
                     'category_id' => $categoryId,
                     'title' => $title,
+                    'introduction' => $introduction,
                     'slug' => $slug,
                     'description' => $description,
                     'image_url' => $imageUrl,
@@ -77,19 +80,20 @@ final class AdminContentRepository
             } else {
                 $save = $this->pdo->prepare(
                     'INSERT INTO contents
-                     (category_id, author_id, title, slug, description, image_url,
-                      download_url, content_type, platform, game_versions,
-                      is_featured, status)
-                     VALUES
-                     (:category_id, :author_id, :title, :slug, :description, :image_url,
-                      :download_url, :content_type, :platform, :game_versions,
-                      :is_featured, :status)'
+                    (category_id, author_id, title, introduction, slug, description, image_url,
+                        download_url, content_type, platform, game_versions,
+                        is_featured, status)
+                    VALUES
+                    (:category_id, :author_id, :title, :introduction, :slug, :description, :image_url,
+                        :download_url, :content_type, :platform, :game_versions,
+                        :is_featured, :status)'
                 );
 
                 $save->execute([
                     'category_id' => $categoryId,
                     'author_id' => $authorId,
                     'title' => $title,
+                    'introduction' => $introduction,
                     'slug' => $slug,
                     'description' => $description,
                     'image_url' => $imageUrl,

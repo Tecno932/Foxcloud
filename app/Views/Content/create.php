@@ -66,21 +66,47 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
             </div>
 
             <div class="content-cover-upload">
-                <div class="content-cover-preview" data-cover-preview>
-                    <span>Vista previa de portada</span>
-                </div>
-
-                <label for="content-image-file">Imagen de portada</label>
-                <input
-                    id="content-image-file"
-                    name="image_file"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    required
-                    data-cover-input
+                <label
+                    for="content-image-file"
+                    class="content-cover-dropzone"
+                    data-cover-dropzone
                 >
+                    <div class="content-cover-preview" data-cover-preview>
+                        <div class="content-cover-placeholder">
+                            <span class="content-cover-upload-icon" aria-hidden="true">+</span>
+                            <strong>Subí la imagen de portada</strong>
+                            <span>Arrastrá una imagen hasta acá o hacé clic para seleccionarla</span>
+                        </div>
+                    </div>
+
+                    <input
+                        id="content-image-file"
+                        class="content-cover-input"
+                        name="image_file"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        required
+                        data-cover-input
+                    >
+                </label>
+
                 <small class="form-hint">
-                    Obligatoria. JPG, PNG o WebP. Máximo 2 MB.
+                    Obligatoria. JPG, PNG o WebP. Máximo 2 MB. Podés seleccionar otra imagen para reemplazarla.
+                </small>
+            </div>
+
+            <div class="content-introduction">
+                <label for="content-introduction">Introducción de la tarjeta</label>
+                <textarea
+                    id="content-introduction"
+                    name="introduction"
+                    rows="3"
+                    maxlength="300"
+                    required
+                    placeholder="Escribí una presentación breve de tu contenido..."
+                ><?= e((string)($formContent['introduction'] ?? '')) ?></textarea>
+                <small class="form-hint">
+                    Este texto aparecerá en la tarjeta de tu publicación. Máximo 300 caracteres.
                 </small>
             </div>
 
@@ -91,7 +117,7 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
                 maxlength="180"
                 required
                 value="<?= e((string)($formContent['title'] ?? '')) ?>"
-                placeholder="Ejemplo: Mi aventura épica"
+                placeholder="Nombre del mod"
             >
 
             <label for="content-slug">Slug de la URL</label>
@@ -102,7 +128,7 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
                 pattern="[a-z0-9-]+"
                 required
                 value="<?= e((string)($formContent['slug'] ?? '')) ?>"
-                placeholder="mi-aventura-epica"
+                placeholder="nombre-de-la-url"
                 data-slug-input
             >
             <small class="form-hint">
@@ -228,6 +254,15 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
                     </option>
                 <?php endforeach; ?>
             </select>
+            
+            <label for="content-versions">Versiones de Minecraft</label>
+            <input
+                id="content-versions"
+                name="game_versions"
+                maxlength="1000"
+                value="<?= e($formVersionsText) ?>"
+                placeholder="Ejemplo: 1.20.80, 1.21.0"
+            >
 
             <div class="content-wizard-actions">
                 <button class="button button-secondary" type="button" data-wizard-back>
@@ -247,23 +282,76 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
                 <p>Agregá la información que necesita la comunidad para conocerlo y descargarlo.</p>
             </div>
 
-            <label for="content-description">Descripción</label>
-            <textarea
-                id="content-description"
-                name="description"
-                rows="6"
-                required
-                placeholder="Explicá qué ofrece tu contenido..."
-            ><?= e((string)($formContent['description'] ?? '')) ?></textarea>
+                <label for="content-description-editor">Descripción del contenido</label>
 
-            <label for="content-versions">Versiones de Minecraft</label>
-            <input
-                id="content-versions"
-                name="game_versions"
-                maxlength="1000"
-                value="<?= e($formVersionsText) ?>"
-                placeholder="Ejemplo: 1.20.80, 1.21.0"
-            >
+                <div class="content-editor-wrapper">
+                    <div id="content-description-toolbar">
+                        <span class="ql-formats">
+                            <select class="ql-header">
+                                <option selected></option>
+                                <option value="1"></option>
+                                <option value="2"></option>
+                                <option value="3"></option>
+                            </select>
+                            <select class="ql-font"></select>
+                            <select class="ql-size"></select>
+                        </span>
+
+                        <span class="ql-formats">
+                            <button type="button" class="ql-bold"></button>
+                            <button type="button" class="ql-italic"></button>
+                            <button type="button" class="ql-underline"></button>
+                            <button type="button" class="ql-strike"></button>
+                        </span>
+
+                        <span class="ql-formats">
+                            <select class="ql-color"></select>
+                            <select class="ql-background"></select>
+                        </span>
+
+                        <span class="ql-formats">
+                            <button type="button" class="ql-list" value="ordered"></button>
+                            <button type="button" class="ql-list" value="bullet"></button>
+                            <button type="button" class="ql-blockquote"></button>
+                        </span>
+
+                        <span class="ql-formats">
+                            <button type="button" class="ql-link"></button>
+                            <button type="button" class="ql-clean"></button>
+                        </span>
+                    </div>
+
+                    <div id="content-description-editor"></div>
+                </div>
+
+                <textarea
+                    id="content-description"
+                    name="description"
+                    hidden
+                ><?= e((string)($formContent['description'] ?? '')) ?></textarea>
+
+                <div class="content-editor-preview-controls">
+                    <button
+                        type="button"
+                        class="button button-secondary"
+                        data-description-preview-toggle
+                        aria-expanded="false"
+                    >
+                        Vista previa del contenido
+                    </button>
+                </div>
+
+                <section
+                    class="content-editor-preview"
+                    data-description-preview
+                    hidden
+                >
+                    <h3>Vista previa de la publicación</h3>
+                    <div
+                        class="content-rich-description"
+                        data-description-preview-content
+                    ></div>
+                </section>
 
             <label for="content-download">Enlace de descarga</label>
             <input

@@ -268,8 +268,9 @@ input:disabled {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    min-width: 42px;
+    width: 46px;
+    min-width: 46px;
+    min-height: 44px;
     padding: 0;
 }
 
@@ -873,16 +874,19 @@ input:disabled {
 }
 
 .content-card-favorite .button {
-    width: 34px;
-    height: 34px;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 1px solid #ffffff35;
-    border-radius: 7px;
+    border-radius: 9px;
     background: #09090bd9;
     color: #fff;
+    font-size: 19px;
 }
 
 /* Estado vacío */
@@ -1604,7 +1608,69 @@ input:disabled {
 
 .profile-heading h1 {
     margin: 5px 0;
+    gap: 7px;
     font-size: clamp(26px, 4vw, 36px);
+}
+
+.profile-heading-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.profile-heading-title h1 {
+    margin: 5px 0;
+    gap: 7px;
+}
+
+.profile-icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 18px;
+    line-height: 1;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+}
+
+.profile-icon-action:hover {
+    border: none;
+    background: transparent;
+    transform: none;
+    opacity: 0.7;
+}
+
+.profile-icon-action:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+}
+
+.profile-discord-action {
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-size: 18px;
+    gap: 5px;
+}
+
+.profile-discord-action:hover {
+    border: none;
+    background: transparent;
+    transform: none;
+    opacity: 0.75;
 }
 
 .profile-username {
@@ -2325,24 +2391,25 @@ input:disabled {
 }
 
 .content-detail-actions .detail-action-form {
-    flex: 0 0 44px;
-    width: 44px;
+    flex: 0 0 48px;
+    width: 48px;
     margin: 0;
 }
 
 /* Botones con iconos */
 
 .detail-icon-button {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
     padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 9px;
     background: transparent;
     color: var(--text);
     cursor: pointer;
@@ -4873,4 +4940,338 @@ input:disabled {
     .content-cover-preview {
         aspect-ratio: 16 / 9;
     }
+}
+
+/* Editor enriquecido de contenido */
+
+.content-editor-wrapper {
+    width: 100%;
+    margin: 12px 0 18px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+
+.content-editor-wrapper .ql-toolbar.ql-snow {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.content-editor-wrapper .ql-container.ql-snow {
+    min-height: 420px;
+    border: 0;
+    font-family: inherit;
+    font-size: 15px;
+}
+
+.content-editor-wrapper .ql-editor {
+    min-height: 420px;
+    padding: 22px;
+    color: var(--foreground);
+    line-height: 1.8;
+}
+
+.content-editor-wrapper .ql-editor.ql-blank::before {
+    color: var(--muted);
+    font-style: normal;
+}
+
+.content-editor-wrapper .ql-snow .ql-stroke {
+    stroke: var(--foreground);
+}
+
+.content-editor-wrapper .ql-snow .ql-fill {
+    fill: var(--foreground);
+}
+
+.content-editor-wrapper .ql-snow .ql-picker {
+    color: var(--foreground);
+}
+
+.content-editor-preview-controls {
+    margin: 18px 0;
+}
+
+.content-editor-preview {
+    margin: 20px 0;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+
+.content-editor-preview h3 {
+    margin: 0 0 20px;
+}
+
+.content-editor-preview[hidden] {
+    display: none !important;
+}
+
+.content-rich-description {
+    color: var(--foreground);
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+}
+
+.content-rich-description img {
+    max-width: 100%;
+    height: auto;
+}
+
+.content-rich-description h1,
+.content-rich-description h2,
+.content-rich-description h3 {
+    margin: 1.5em 0 0.6em;
+}
+
+.content-rich-description blockquote {
+    margin: 20px 0;
+    padding: 12px 18px;
+    border-left: 4px solid var(--primary);
+    background: var(--surface-hover);
+}
+
+.content-rich-description a {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+    .content-editor-wrapper .ql-editor {
+        min-height: 320px;
+        padding: 15px;
+    }
+
+    .content-editor-preview {
+        padding: 16px;
+    }
+}
+
+/* Corrección de colores del editor Quill */
+
+.content-editor-wrapper {
+    background: #18181b !important;
+    border-color: #3f3f46;
+}
+
+.content-editor-wrapper .ql-toolbar.ql-snow {
+    background: #202027 !important;
+    border-color: #3f3f46 !important;
+}
+
+.content-editor-wrapper .ql-container.ql-snow {
+    background: #18181b !important;
+    border-color: #3f3f46 !important;
+}
+
+.content-editor-wrapper .ql-editor {
+    background: #18181b !important;
+    color: #f4f4f5 !important;
+    caret-color: #ffffff;
+}
+
+.content-editor-wrapper .ql-editor p,
+.content-editor-wrapper .ql-editor h1,
+.content-editor-wrapper .ql-editor h2,
+.content-editor-wrapper .ql-editor h3,
+.content-editor-wrapper .ql-editor li {
+    color: #f4f4f5;
+}
+
+.content-editor-wrapper .ql-editor.ql-blank::before {
+    color: #a1a1aa !important;
+}
+
+.content-editor-wrapper .ql-snow .ql-stroke {
+    stroke: #e4e4e7 !important;
+}
+
+.content-editor-wrapper .ql-snow .ql-fill {
+    fill: #e4e4e7 !important;
+}
+
+.content-editor-wrapper .ql-snow .ql-picker {
+    color: #e4e4e7 !important;
+}
+
+.content-editor-wrapper .ql-snow .ql-picker-options {
+    background: #27272a !important;
+    border-color: #3f3f46 !important;
+}
+
+.content-editor-wrapper .ql-snow .ql-picker-item {
+    color: #e4e4e7 !important;
+}
+
+.content-editor-wrapper .ql-snow button:hover .ql-stroke,
+.content-editor-wrapper .ql-snow button.ql-active .ql-stroke {
+    stroke: var(--primary) !important;
+}
+
+/* ========================================
+   CARD PARA SUBIR CONTENIDO EN PERFILES
+======================================== */
+
+.profile-tab-content .content-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.content-card-create {
+    border: 1px dashed #f973166b;
+    background: linear-gradient(145deg, #191a20, #111216);
+}
+
+.content-card-create:hover {
+    border-color: var(--primary);
+    background: #1d1b1a;
+}
+
+.content-create-image {
+    background:
+        radial-gradient(circle, #f9731618 0%, transparent 65%),
+        #15161b;
+}
+
+.content-create-plus {
+    display: flex;
+    width: 68px;
+    height: 68px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #f973166b;
+    border-radius: 50%;
+    color: var(--primary);
+    font-size: 48px;
+    font-weight: 300;
+    line-height: 1;
+    transition: transform .2s ease, background .2s ease;
+}
+
+.content-card-create:hover .content-create-plus {
+    transform: scale(1.1);
+    background: #f9731620;
+}
+
+.content-card-create .content-info {
+    text-align: center;
+}
+
+.content-card-create .content-info h3 {
+    color: var(--primary);
+}
+
+@media (max-width: 900px) {
+    .profile-tab-content .content-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 430px) {
+    .profile-tab-content .content-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Iconos del atlas */
+.icon-atlas {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    background-image: url('/assets/icons/atlas/banner-icons.png');
+    background-size: 512px 512px;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    vertical-align: middle;
+}
+
+.icon-atlas-discord {
+    background-position: 0 0;
+}
+
+.icon-atlas-check {
+    background-position: 0 -32px;
+}
+
+.icon-atlas-cross {
+    background-position: -32px -32px;
+}
+
+.icon-atlas-warning {
+    background-position: -64px -32px;
+}
+
+/* Carga de portada */
+.content-cover-dropzone {
+    position: relative;
+    display: block;
+    cursor: pointer;
+}
+
+.content-cover-preview {
+    aspect-ratio: 16 / 7;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.content-cover-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    color: var(--muted);
+    text-align: center;
+}
+
+.content-cover-placeholder strong {
+    color: var(--foreground);
+    font-size: 16px;
+}
+
+.content-cover-upload-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 1px solid var(--border-hover);
+    border-radius: 50%;
+    font-size: 30px;
+    line-height: 1;
+}
+
+.content-cover-dropzone:hover .content-cover-preview,
+.content-cover-dropzone.is-dragging .content-cover-preview {
+    border-color: var(--primary);
+    background: var(--surface-hover);
+}
+
+.content-cover-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.content-cover-dropzone:focus-within .content-cover-preview {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+}
+
+.content-introduction {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 28px;
+}
+
+.content-introduction textarea {
+    width: 100%;
+    resize: vertical;
 }

@@ -1,6 +1,8 @@
 
 <?php
-if (!$contents) {
+$showCreateContentCard = !empty($showCreateContentCard);
+
+if (!$contents && !$showCreateContentCard) {
     echo '<div class="empty-state"><span class="empty-icon">✦</span>';
     echo '<h3>Próximamente, nuevo contenido</h3>';
     echo '<p>Estamos preparando publicaciones para esta sección.</p></div>';
@@ -8,6 +10,20 @@ if (!$contents) {
 }
 
 echo '<div class="content-grid">';
+
+if ($showCreateContentCard) {
+    echo '<article class="content-card content-card-create">';
+    echo '<a class="content-card-link" href="/?page=create-content">';
+    echo '<div class="content-image content-create-image">';
+    echo '<span class="content-create-plus" aria-hidden="true">+</span>';
+    echo '</div>';
+    echo '<div class="content-info">';
+    echo '<h3>Subir contenido</h3>';
+    echo '<p>Compartí tus mods y creaciones con la comunidad.</p>';
+    echo '</div>';
+    echo '</a>';
+    echo '</article>';
+}
 
 foreach ($contents as $item) {
     $image = image_display_url(trim((string)($item['image_url'] ?? '')));
@@ -53,7 +69,13 @@ foreach ($contents as $item) {
 
     echo '<h3>' . e((string)$item['title']) . '</h3>';
 
-    echo '<p>' . e(mb_strimwidth((string)$item['description'], 0, 115, '…', 'UTF-8')) . '</p>';
+    $cardText = trim((string)($item['introduction'] ?? ''));
+
+    if ($cardText === '') {
+        $cardText = trim(strip_tags((string)($item['description'] ?? '')));
+    }
+
+    echo '<p>' . e(mb_strimwidth($cardText, 0, 115, '…', 'UTF-8')) . '</p>';
 
     echo '</div>';
 

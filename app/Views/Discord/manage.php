@@ -62,11 +62,13 @@ if (!in_array($currentTimezone, $timezoneOptions, true)) {
 sort($timezoneOptions);
 ?>
 
-<section class="page-banner discord-manage-banner">
-    <span class="eyebrow">INTEGRACIÓN CON DISCORD</span>
-    <h1>Administrar <span>servidor.</span></h1>
-    <p>Información y configuración de tu servidor conectado a Foxcraftservice.</p>
-</section>
+<?php if (($page ?? '') !== 'discord'): ?>
+    <section class="page-banner discord-manage-banner">
+        <span class="eyebrow">INTEGRACIÓN CON DISCORD</span>
+        <h1>Administrar <span>servidor.</span></h1>
+        <p>Información y configuración de tu servidor conectado a Foxcraftservice.</p>
+    </section>
+<?php endif; ?>
 
 <section class="discord-manage-page">
     <?php if (!is_array($manageGuild) || $discordManageError !== null): ?>
@@ -74,8 +76,8 @@ sort($timezoneOptions);
             <h2>No se puede abrir el panel</h2>
             <p><?= e($discordManageError ?? 'No hay información disponible para este servidor.') ?></p>
 
-            <a class="button button-primary" href="/?page=profile">
-                Volver a mi perfil
+            <a class="button button-primary" href="/?page=discord&amp;tab=servers">
+                Volver a servidores
             </a>
 
             <a class="button button-outline" href="/?page=discord-guilds">
@@ -142,7 +144,9 @@ sort($timezoneOptions);
                     <form
                         class="discord-manage-form"
                         method="POST"
-                        action="/?page=discord-manage&amp;id=<?= rawurlencode((string)$manageGuild['guild_id']) ?>"
+                        action="<?= ($page ?? '') === 'discord'
+                            ? '/?page=discord&amp;tab=admin&amp;id=' . rawurlencode((string)$manageGuild['guild_id'])
+                            : '/?page=discord-manage&amp;id=' . rawurlencode((string)$manageGuild['guild_id']) ?>"
                     >
                         <input
                             type="hidden"
@@ -194,8 +198,8 @@ sort($timezoneOptions);
             </div>
 
             <div class="discord-manage-actions">
-                <a class="button button-outline" href="/?page=profile">
-                    Volver a mi perfil
+                <a class="button button-outline" href="/?page=discord&amp;tab=servers">
+                    Volver a servidores
                 </a>
 
                 <a class="button button-primary" href="/?page=discord-guilds">

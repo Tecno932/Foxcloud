@@ -601,9 +601,32 @@ if (contentWizard) {
     const coverInput = contentWizard.querySelector('[data-cover-input]');
     const coverPreview = contentWizard.querySelector('[data-cover-preview]');
     const slugInput = contentWizard.querySelector('[data-slug-input]');
+    const descriptionField = contentWizard.querySelector('#content-description');
+    const descriptionEditor = contentWizard.querySelector('#content-description-editor');
 
     let currentStep = 1;
     let coverObjectUrl = null;
+    let quill = null;
+
+    if (descriptionField && descriptionEditor && typeof Quill !== 'undefined') {
+        quill = new Quill(descriptionEditor, {
+            theme: 'snow',
+            placeholder: 'Describí tu contenido, sus características y cómo instalarlo...',
+            modules: {
+                toolbar: '#content-description-toolbar'
+            }
+        });
+
+        // Recuperar el contenido si se está editando una propuesta.
+        if (descriptionField.value.trim()) {
+            quill.clipboard.dangerouslyPasteHTML(descriptionField.value);
+        }
+
+        // Sincronizar el editor con el campo que se envía al servidor.
+        quill.on('text-change', () => {
+            descriptionField.value = quill.root.innerHTML;
+        });
+    }
 
     // Mostrar una etapa y desactivar las demás.
     const showStep = (stepNumber) => {
@@ -638,6 +661,16 @@ if (contentWizard) {
         if (!currentFieldset.checkValidity()) {
             currentFieldset.reportValidity();
             return false;
+        }
+
+        if (currentStep === 4 && quill) {
+            if (!quill.getText().trim()) {
+                alert('Escribí una descripción antes de continuar.');
+                quill.focus();
+                return false;
+            }
+
+            descriptionField.value = quill.root.innerHTML;
         }
 
         return true;
@@ -710,20 +743,41 @@ if (contentWizard) {
 
     updateCategories(false);
 
-    // Vista previa y validación de portada.
+    // Carga de portada: selector, arrastrar y soltar, y reemplazo.
     if (coverInput && coverPreview) {
-        coverInput.addEventListener('change', () => {
-            const file = coverInput.files?.[0];
+        const dropzone = contentWizard.querySelector('[data-cover-dropzone]');
 
+        const resetCoverPreview = () => {
+            coverPreview.replaceChildren();
+
+            const placeholder = document.createElement('div');
+            placeholder.className = 'content-cover-placeholder';
+
+            const icon = document.createElement('span');
+            icon.className = 'content-cover-upload-icon';
+            icon.textContent = '+';
+
+            const title = document.createElement('strong');
+            title.textContent = 'Subí la imagen de portada';
+
+            const hint = document.createElement('span');
+            hint.textContent = 'Arrastrá una imagen hasta acá o hacé clic para seleccionarla';
+
+            placeholder.append(icon, title, hint);
+            coverPreview.appendChild(placeholder);
+        };
+
+        const loadCover = (file) => {
             if (coverObjectUrl) {
                 URL.revokeObjectURL(coverObjectUrl);
                 coverObjectUrl = null;
             }
 
             coverPreview.replaceChildren();
+            coverInput.setCustomValidity('');
 
             if (!file) {
-                coverPreview.textContent = 'Vista previa de portada';
+                resetCoverPreview();
                 return;
             }
 
@@ -734,26 +788,20 @@ if (contentWizard) {
             ];
 
             if (!allowedTypes.includes(file.type)) {
-                coverInput.setCustomValidity(
-                    'Seleccioná una imagen JPG, PNG o WebP.'
-                );
                 coverInput.value = '';
-                coverPreview.textContent = 'Formato no permitido';
+                coverInput.setCustomValidity('Seleccioná una imagen JPG, PNG o WebP.');
+                resetCoverPreview();
                 coverInput.reportValidity();
                 return;
             }
 
             if (file.size > 2 * 1024 * 1024) {
-                coverInput.setCustomValidity(
-                    'La imagen no puede superar los 2 MB.'
-                );
                 coverInput.value = '';
-                coverPreview.textContent = 'La imagen supera los 2 MB';
+                coverInput.setCustomValidity('La imagen no puede superar los 2 MB.');
+                resetCoverPreview();
                 coverInput.reportValidity();
                 return;
             }
-
-            coverInput.setCustomValidity('');
 
             coverObjectUrl = URL.createObjectURL(file);
 
@@ -762,7 +810,41 @@ if (contentWizard) {
             image.alt = 'Vista previa de portada';
 
             coverPreview.appendChild(image);
+        };
+
+        coverInput.addEventListener('change', () => {
+            loadCover(coverInput.files?.[0] || null);
         });
+
+        if (dropzone) {
+            ['dragenter', 'dragover'].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.add('is-dragging');
+                });
+            });
+
+            ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    dropzone.classList.remove('is-dragging');
+                });
+            });
+
+            dropzone.addEventListener('drop', (event) => {
+                const file = event.dataTransfer?.files?.[0];
+
+                if (!file) return;
+
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                coverInput.files = transfer.files;
+
+                coverInput.dispatchEvent(new Event('change', {
+                    bubbles: true
+                }));
+            });
+        }
     }
 
     // Validación final antes de enviar.
@@ -790,6 +872,19 @@ if (contentWizard) {
 
             return;
         }
+
+        if (quill && descriptionField) {
+            descriptionField.value = quill.root.innerHTML;
+
+            if (!quill.getText().trim()) {
+                event.preventDefault();
+                showStep(4);
+                alert('La descripción no puede estar vacía.');
+                quill.focus();
+                return;
+            }
+        }
+
     });
 
     // Iniciar en la primera etapa.

@@ -50,7 +50,9 @@
             </div>
 
             <section class="content-detail-description">
-                <p><?= nl2br(e((string)$contentDetail['description'])) ?></p>
+                <div class="content-rich-description">
+                    <?= (string)$contentDetail['description'] ?>
+                </div>
             </section>
 
             <a

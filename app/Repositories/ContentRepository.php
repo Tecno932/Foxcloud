@@ -17,7 +17,7 @@ final class ContentRepository
     {
 
         $query = $this->pdo->query(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
+            "SELECT c.id, c.title, c.slug, c.introduction, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
              FROM contents c
@@ -41,7 +41,7 @@ final class ContentRepository
         $categoryCondition = $this->buildCategoryCondition($categoryId, $params);
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
+            "SELECT c.id, c.title, c.slug, c.introduction, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
             FROM contents c
@@ -132,7 +132,7 @@ final class ContentRepository
         $where = implode(' AND ', $conditions);
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
+            "SELECT c.id, c.title, c.slug, c.introduction, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name, cat.slug AS category_slug
              FROM contents c
@@ -277,7 +277,7 @@ final class ContentRepository
         $limit = max(1, min($limit, 100));
 
         $query = $this->pdo->prepare(
-            "SELECT c.id, c.title, c.slug, c.description, c.image_url, c.platform,
+            "SELECT c.id, c.title, c.slug, c.introduction, c.description, c.image_url, c.platform,
                     c.downloads_count, c.likes_count,
                     cat.name AS category_name,
                     cat.slug AS category_slug

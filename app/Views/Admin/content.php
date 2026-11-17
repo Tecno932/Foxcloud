@@ -45,6 +45,14 @@ $formVersionsText = implode(', ', array_filter($formVersions, 'is_scalar'));
             <?php endforeach; ?>
         </select>
 
+        <label for="admin-introduction">Introducción de la tarjeta</label>
+        <textarea
+            id="admin-introduction"
+            name="introduction"
+            rows="3"
+            maxlength="300"
+        ><?= e((string)($formContent['introduction'] ?? '')) ?></textarea>
+
         <label for="admin-description">Descripción</label>
         <textarea id="admin-description" name="description" rows="5"><?= e((string)($formContent['description'] ?? '')) ?></textarea>
 
