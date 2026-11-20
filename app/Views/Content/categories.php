@@ -1,10 +1,34 @@
+<?php
+$excludedCategories = [
+    'shaders',
+    'texture-packs',
+    'modpacks',
+    'addons',
+    'scripts',
+];
+
+$visibleCategories = array_filter(
+    $categories,
+    static fn (array $category): bool =>
+        !in_array(
+            strtolower(trim((string)($category['slug'] ?? ''))),
+            $excludedCategories,
+            true
+        )
+);
+?>
+
 <section class="section categories-section" id="categorias">
     <div class="section-heading">
-        <div><span class="eyebrow">EXPLORÁ A TU MANERA</span><h2>Categorías <span>destacadas</span></h2></div>
-        <span class="section-count"><?= count($categories) ?> secciones</span>
+        <div>
+            <span class="eyebrow">EXPLORÁ A TU MANERA</span>
+            <h2>Categorías <span>destacadas</span></h2>
+        </div>
+        <span class="section-count"><?= count($visibleCategories) ?> secciones</span>
     </div>
+
     <div class="category-grid">
-    <?php foreach ($categories as $category): ?>
+    <?php foreach ($visibleCategories as $category): ?>
         <a class="category-card" href="/?page=<?= e((string)$category['slug']) ?>">
             <span class="category-icon">
                 <img loading="lazy" src="/assets/icons/categories/<?= e(match ($category['slug']) {
@@ -16,7 +40,10 @@
                     default => 'mods.png',
                 }) ?>" alt="">
             </span>
-            <span class="category-copy"><strong><?= e((string)$category['name']) ?></strong><small><?= e((string)($category['description'] ?: 'Explorá contenido para Minecraft.')) ?></small></span>
+            <span class="category-copy">
+                <strong><?= e((string)$category['name']) ?></strong>
+                <small><?= e((string)($category['description'] ?: 'Explorá contenido para Minecraft.')) ?></small>
+            </span>
             <span class="category-arrow">↗</span>
         </a>
     <?php endforeach; ?>

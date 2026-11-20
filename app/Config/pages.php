@@ -19,6 +19,7 @@ return [
     'verify-email' => ['Verificar correo', 'Activá tu cuenta de FoxCraft.'],
     'profile' => ['Mi perfil', 'Tu cuenta FoxCraft.'],
     'discord' => ['Discord', 'Administrá la integración de Discord con FoxCraft.'],
+    'chat' => ['Chat global', 'Conversá en tiempo real con la comunidad FoxCraft.'],
     'favorites' => ['Mis favoritos', 'Tus publicaciones guardadas en FoxCraft.'],
     'likes' => ['Me gusta', 'Gestioná tus publicaciones favoritas.'],
     'edit-profile' => ['Editar perfil', 'Actualizá los datos de tu perfil FoxCraft.'],

@@ -25,6 +25,7 @@
             <a href="/?page=resource-packs">Textures</a>
             <a href="/?page=skins">Skins</a>
             <a href="/?page=schematics">Schematics</a>
+            <a href="/?page=chat" class="<?= $page === 'chat' ? 'active' : '' ?>">Chat</a>
 
             <div class="mobile-account">
                 <?php if (!empty($_SESSION['user_id'])): ?>

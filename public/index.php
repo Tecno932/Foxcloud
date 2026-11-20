@@ -48,9 +48,58 @@ $csp = "default-src 'self'; "
     . "style-src 'self'; "
     . "img-src 'self' blob: https://foxcraft-web1-249i.vercel.app https://mosaicary.com; "
     . "font-src 'self'; "
-    . "connect-src 'self' https://255md.com https://ay267.com http://ay267.com";
+    . "connect-src 'self' ws: wss: https://255md.com https://ay267.com http://ay267.com";
 
 header('Content-Security-Policy: ' . $csp);
+
+// API: token de autenticación del chat
+if (($_GET['page'] ?? '') === 'chat-token') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, private');
+    header('Pragma: no-cache');
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        header('Allow: POST');
+        echo json_encode(['error' => 'Método no permitido.']);
+        exit;
+    }
+
+    if (empty($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Iniciá sesión para usar el chat.']);
+        exit;
+    }
+
+    $csrfHeader = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+    $csrfSession = (string) ($_SESSION['csrf_token'] ?? '');
+
+    if (
+        $csrfSession === ''
+        || $csrfHeader === ''
+        || !hash_equals($csrfSession, $csrfHeader)
+    ) {
+        http_response_code(403);
+        echo json_encode(['error' => 'La sesión venció. Recargá la página.']);
+        exit;
+    }
+
+    try {
+        require_once APP_ROOT . '/Services/ChatTokenService.php';
+
+        $token = \FoxCraft\Services\ChatTokenService::create(
+            (int) $_SESSION['user_id']
+        );
+
+        echo json_encode(['token' => $token], JSON_THROW_ON_ERROR);
+    } catch (Throwable $exception) {
+        error_log('FoxCraft chat token: ' . $exception->getMessage());
+        http_response_code(503);
+        echo json_encode(['error' => 'El servicio de chat no está disponible.']);
+    }
+
+    exit;
+}
 
 // ============================================================
 // CONFIGURACIÓN DE PÁGINAS Y RUTAS
@@ -468,13 +517,11 @@ if (
 
             $_SESSION['flash'] = 'Tu cuenta Discord fue vinculada correctamente.';
         }
-    } catch (Throwable $exception) {
-        error_log('FoxCraft Discord OAuth callback: ' . $exception->getMessage());
+        } catch (Throwable $exception) {
+            error_log('FoxCraft Discord OAuth callback: ' . $exception->getMessage());
 
-        $_SESSION['flash'] = $exception instanceof RuntimeException
-            ? $exception->getMessage()
-            : 'No se pudo completar la autorización con Discord.';
-    }
+            $_SESSION['flash'] = 'No se pudo completar la autorización con Discord. Verificá la conexión e intentá nuevamente.';
+        }
 
     header(
         'Location: /?page=discord&tab=' . $discordReturnTab,
@@ -732,9 +779,18 @@ if ($isDiscordManageRequest && $_SERVER['REQUEST_METHOD'] === 'GET')
                 } else {
                     $permissionsRaw = (string) ($managedGuild['permissions'] ?? '0');
 
+                    $maxPermissions = (string) PHP_INT_MAX;
+
                     $permissions = (
                         PHP_INT_SIZE >= 8
-                        && preg_match('/\A[0-9]{1,18}\z/', $permissionsRaw)
+                        && preg_match('/\A[0-9]{1,19}\z/', $permissionsRaw)
+                        && (
+                            strlen($permissionsRaw) < strlen($maxPermissions)
+                            || (
+                                strlen($permissionsRaw) === strlen($maxPermissions)
+                                && strcmp($permissionsRaw, $maxPermissions) <= 0
+                            )
+                        )
                     ) ? (int) $permissionsRaw : 0;
 
                     $isGuildOwner = !empty($managedGuild['owner']);
@@ -938,9 +994,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $permissionsRaw = (string) ($managedGuild['permissions'] ?? '0');
 
+                    $maxPermissions = (string) PHP_INT_MAX;
+
                     $permissions = (
                         PHP_INT_SIZE >= 8
-                        && preg_match('/\A[0-9]{1,18}\z/', $permissionsRaw)
+                        && preg_match('/\A[0-9]{1,19}\z/', $permissionsRaw)
+                        && (
+                            strlen($permissionsRaw) < strlen($maxPermissions)
+                            || (
+                                strlen($permissionsRaw) === strlen($maxPermissions)
+                                && strcmp($permissionsRaw, $maxPermissions) <= 0
+                            )
+                        )
                     ) ? (int) $permissionsRaw : 0;
 
                     $isGuildOwner = !empty($managedGuild['owner']);
@@ -971,29 +1036,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } elseif (!in_array($timezone, $allowedTimezones, true)) {
                             $errors[] = 'La zona horaria seleccionada no es válida.';
                         } else {
-                            $botPdo = \FoxCraft\Core\BotDatabase::connection();
+                                $botPdo = \FoxCraft\Core\BotDatabase::connection();
 
-                            $guildStatement = $botPdo->prepare(
-                                'SELECT guild_id
-                                 FROM discord_guilds
-                                 WHERE guild_id = ?
-                                   AND is_active = 1
-                                 LIMIT 1'
-                            );
+                                $botPdo->beginTransaction();
 
-                            $guildStatement->execute([$requestedGuildId]);
+                                try {
+                                    $guildStatement = $botPdo->prepare(
+                                        'SELECT guild_id
+                                        FROM discord_guilds
+                                        WHERE guild_id = ?
+                                        AND is_active = 1
+                                        LIMIT 1
+                                        FOR UPDATE'
+                                    );
 
-                            if (!$guildStatement->fetch(PDO::FETCH_ASSOC)) {
-                                $_SESSION['flash'] = 'Foxcraftservice ya no está conectado a ese servidor.';
+                                    $guildStatement->execute([$requestedGuildId]);
 
-                                header('Location: /?page=discord&tab=servers', true, 303);
-                                return;
-                            }
+                                    if (!$guildStatement->fetch(PDO::FETCH_ASSOC)) {
+                                        $botPdo->rollBack();
 
-                            $botPdo->beginTransaction();
+                                        $_SESSION['flash'] = 'Foxcraftservice ya no está conectado a ese servidor.';
 
-                            try {
-                                $previousStatement = $botPdo->prepare(
+                                        header('Location: /?page=discord&tab=servers', true, 303);
+
+                                        return;
+                                    }
+
+                                    $previousStatement = $botPdo->prepare(
                                     'SELECT language, timezone
                                      FROM guild_settings
                                      WHERE guild_id = ?
@@ -1099,6 +1168,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $_SESSION['flash'] = 'No tenías una cuenta Discord vinculada.';
             }
+
+            // Invalidar autorizaciones y servidores almacenados en sesión.
+            unset(
+                $_SESSION['discord_managed_guilds'],
+                $_SESSION['discord_guilds_oauth']
+            );
 
             header('Location: /?page=discord&tab=servers', true, 303);
             exit;
@@ -3038,9 +3113,12 @@ if ($pdo) {
     <?php endif; ?>
 
     <script src="/assets/js/app.js" defer></script>
+    <?php if ($page === 'chat'): ?>
+        <script src="/assets/js/chat.js" defer></script>
+    <?php endif; ?>
 </head>
 
-<body<?= $page === 'prepare-download' && isset($prepareDownloadId) ? ' data-monetag-zone="11696491"' : '' ?>>
+<body class="<?= $page === 'chat' ? 'chat-layout' : '' ?>"<?= $page === 'prepare-download' && isset($prepareDownloadId) ? ' data-monetag-zone="11696491"' : '' ?>>
 
     <?php if ($page !== 'prepare-download'): ?>
         <?php require APP_ROOT . '/Views/layouts/header.php'; ?>
@@ -3312,6 +3390,10 @@ if ($pdo) {
 
             <?php require APP_ROOT . '/Views/Admin/content.php'; ?>
 
+        <?php elseif ($page === 'chat'): ?>
+
+            <?php require APP_ROOT . '/Views/Chat/index.php'; ?>
+
         <?php elseif ($page === 'discord'): ?>
 
             <?php require APP_ROOT . '/Views/Discord/index.php'; ?>
@@ -3345,51 +3427,7 @@ if ($pdo) {
     <?php endif; ?>
 
 
-    <!-- ========================================
-         PASSWORD VISIBILITY
-    ========================================= -->
 
-    <script>
-        document.querySelectorAll('.password-toggle').forEach(button => {
-            const input = document.getElementById(button.dataset.target);
-
-            if (!input) return;
-
-            const eye = `
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                </svg>
-            `;
-
-            const eyeOff = `
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="m3 3 18 18"/>
-                    <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/>
-                    <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a15 15 0 0 1-3 3.8"/>
-                    <path d="M6.2 6.2C3.5 8.1 2 12 2 12s3.6 7 10 7a10.8 10.8 0 0 0 3.1-.5"/>
-                </svg>
-            `;
-
-            button.innerHTML = eye;
-            button.setAttribute('aria-label', 'Mostrar contraseña');
-            button.setAttribute('aria-pressed', 'false');
-
-            button.addEventListener('click', () => {
-                const visible = input.type === 'password';
-
-                input.type = visible ? 'text' : 'password';
-                button.innerHTML = visible ? eyeOff : eye;
-
-                button.setAttribute(
-                    'aria-label',
-                    visible ? 'Ocultar contraseña' : 'Mostrar contraseña'
-                );
-
-                button.setAttribute('aria-pressed', String(visible));
-            });
-        });
-    </script>
 
 </body>
 </html>

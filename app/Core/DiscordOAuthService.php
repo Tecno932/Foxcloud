@@ -287,12 +287,15 @@ final class DiscordOAuthService
 
         $response = curl_exec($curl);
         $status = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($curl);
+        $curlErrorCode = curl_errno($curl);
 
         curl_close($curl);
 
         if (!is_string($response)) {
-            error_log('FoxCraft Discord OAuth cURL: ' . $curlError);
+            error_log(
+                'FoxCraft Discord OAuth: error de conexión cURL. Código: '
+                . $curlErrorCode
+            );
 
             throw new RuntimeException(
                 'No se pudo conectar con Discord.'
@@ -302,31 +305,9 @@ final class DiscordOAuthService
         $data = json_decode($response, true);
 
         if ($status < 200 || $status >= 300 || !is_array($data)) {
-            $safeError = [];
-
-            if (is_array($data)) {
-                foreach (
-                    ['error', 'error_description', 'message', 'code'] as $key
-                ) {
-                    if (
-                        isset($data[$key])
-                        && (
-                            is_string($data[$key])
-                            || is_numeric($data[$key])
-                        )
-                    ) {
-                        $safeError[$key] = (string)$data[$key];
-                    }
-                }
-            }
-
             error_log(
-                'FoxCraft Discord OAuth HTTP ' . $status
-                . ' response: '
-                . json_encode(
-                    $safeError,
-                    JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
-                )
+                'FoxCraft Discord OAuth: respuesta HTTP no válida. Estado: '
+                . $status
             );
 
             throw new RuntimeException(

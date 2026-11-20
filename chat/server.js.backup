@@ -1,0 +1,415 @@
+'use strict';
+
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const mysql = require('mysql2/promise');
+const { WebSocketServer, WebSocket } = require('ws');
+
+const CONFIG_FILE = '/etc/foxcraft/chat.env';
+
+function loadConfig(path) {
+    const values = {};
+
+    for (const line of fs.readFileSync(path, 'utf8').split(/\r?\n/)) {
+        const trimmed = line.trim();
+
+        if (!trimmed || trimmed.startsWith('#')) {
+            continue;
+        }
+
+        const separator = trimmed.indexOf('=');
+
+        if (separator < 1) {
+            continue;
+        }
+
+        const key = trimmed.slice(0, separator).trim();
+        const value = trimmed.slice(separator + 1).trim();
+
+        values[key] = value;
+    }
+
+    const required = [
+        'CHAT_DB_SOCKET',
+        'CHAT_DB_NAME',
+        'CHAT_DB_USER',
+        'CHAT_DB_PASSWORD',
+        'CHAT_TOKEN_SECRET',
+    ];
+
+    for (const key of required) {
+        if (!values[key]) {
+            throw new Error(`Falta la configuración ${key}`);
+        }
+    }
+
+    return values;
+}
+
+const config = loadConfig(CONFIG_FILE);
+
+const pool = mysql.createPool({
+    socketPath: config.CHAT_DB_SOCKET,
+    user: config.CHAT_DB_USER,
+    password: config.CHAT_DB_PASSWORD,
+    database: config.CHAT_DB_NAME,
+    charset: 'utf8mb4',
+    timezone: 'Z',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 20,
+});
+
+const HOST = '127.0.0.1';
+const PORT = 8091;
+const HISTORY_LIMIT = 50;
+const MESSAGE_MAX_LENGTH = 500;
+const RATE_LIMIT_COUNT = 5;
+const RATE_LIMIT_WINDOW = 10_000;
+
+const secret = Buffer.from(config.CHAT_TOKEN_SECRET, 'utf8');
+
+function send(socket, data) {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+    }
+}
+
+function verifyToken(token) {
+    if (typeof token !== 'string' || token.length > 2048) {
+        return null;
+    }
+
+    const parts = token.split('.');
+
+    if (parts.length !== 2) {
+        return null;
+    }
+
+    const [payload, signature] = parts;
+
+    if (
+        !/^[A-Za-z0-9_-]+$/.test(payload) ||
+        !/^[A-Za-z0-9_-]+$/.test(signature)
+    ) {
+        return null;
+    }
+
+    let receivedSignature;
+
+    try {
+        receivedSignature = Buffer.from(signature, 'base64url');
+    } catch {
+        return null;
+    }
+
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(payload)
+        .digest();
+
+    if (
+        receivedSignature.length !== expectedSignature.length ||
+        !crypto.timingSafeEqual(receivedSignature, expectedSignature)
+    ) {
+        return null;
+    }
+
+    try {
+        const data = JSON.parse(
+            Buffer.from(payload, 'base64url').toString('utf8')
+        );
+
+        if (
+            !data ||
+            !/^[1-9]\d*$/.test(String(data.user_id)) ||
+            !Number.isInteger(data.exp) ||
+            data.exp <= Math.floor(Date.now() / 1000)
+        ) {
+            return null;
+        }
+
+        return {
+            userId: String(data.user_id),
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function authenticate(token) {
+    const verified = verifyToken(token);
+
+    if (!verified) {
+        return null;
+    }
+
+    const [rows] = await pool.execute(
+        `SELECT
+            u.id,
+            u.username,
+            p.display_name,
+            p.avatar_path
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.id = ?
+           AND u.status = 'active'
+         LIMIT 1`,
+        [verified.userId]
+    );
+
+    if (!rows.length) {
+        return null;
+    }
+
+    return {
+        id: String(rows[0].id),
+        username: rows[0].username,
+        displayName: rows[0].display_name || rows[0].username,
+        avatarPath: rows[0].avatar_path || null,
+    };
+}
+
+async function loadHistory() {
+    const [rows] = await pool.execute(
+        `SELECT
+            m.id,
+            m.message,
+            m.created_at,
+            u.username,
+            p.display_name,
+            p.avatar_path
+         FROM chat_messages m
+         INNER JOIN users u ON u.id = m.user_id
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.status = 'active'
+         ORDER BY m.id DESC
+         LIMIT ${HISTORY_LIMIT}`
+    );
+
+    return rows.reverse().map((row) => ({
+        id: String(row.id),
+        username: row.username,
+        displayName: row.display_name || row.username,
+        avatarPath: row.avatar_path || null,
+        message: row.message,
+        createdAt: row.created_at,
+    }));
+}
+
+function isRateLimited(socket) {
+    const now = Date.now();
+
+    socket.messageTimestamps = socket.messageTimestamps.filter(
+        (timestamp) => now - timestamp < RATE_LIMIT_WINDOW
+    );
+
+    if (socket.messageTimestamps.length >= RATE_LIMIT_COUNT) {
+        return true;
+    }
+
+    socket.messageTimestamps.push(now);
+    return false;
+}
+
+const wss = new WebSocketServer({
+    host: HOST,
+    port: PORT,
+    path: '/',
+    maxPayload: 2048,
+    perMessageDeflate: false,
+});
+
+wss.on('connection', (socket) => {
+    socket.authenticated = false;
+    socket.authenticating = false;
+    socket.user = null;
+    socket.messageTimestamps = [];
+
+    socket.processing = Promise.resolve();
+
+    socket.on('message', (raw) => {
+        socket.processing = socket.processing
+            .then(async () => {
+                let data;
+
+                try {
+                    data = JSON.parse(raw.toString('utf8'));
+                } catch {
+                    send(socket, {
+                        type: 'error',
+                        message: 'Formato de mensaje inválido.',
+                    });
+                    return;
+                }
+
+                if (
+                    !data ||
+                    typeof data !== 'object' ||
+                    Array.isArray(data)
+                ) {
+                    send(socket, {
+                        type: 'error',
+                        message: 'Formato de mensaje inválido.',
+                    });
+                    return;
+                }
+
+                if (!socket.authenticated) {
+                    if (socket.authenticating || data.type !== 'auth') {
+                        socket.close(1008, 'Autenticación requerida');
+                        return;
+                    }
+
+                    socket.authenticating = true;
+
+                    try {
+                        const user = await authenticate(data.token);
+
+                        if (!user) {
+                            socket.close(1008, 'Token inválido o expirado');
+                            return;
+                        }
+
+                        if (socket.readyState !== WebSocket.OPEN) {
+                            return;
+                        }
+
+                        socket.user = user;
+                        socket.authenticated = true;
+
+                        const history = await loadHistory();
+
+                        if (socket.readyState !== WebSocket.OPEN) {
+                            return;
+                        }
+
+                        send(socket, {
+                            type: 'auth_ok',
+                            user,
+                        });
+
+                        send(socket, {
+                            type: 'history',
+                            messages: history,
+                        });
+                    } catch (error) {
+                        console.error('Error de autenticación:', error.message);
+                        socket.close(1011, 'Error interno');
+                    }
+
+                    return;
+                }
+
+                if (data.type !== 'message') {
+                    return;
+                }
+
+                if (isRateLimited(socket)) {
+                    send(socket, {
+                        type: 'error',
+                        message: 'Estás enviando mensajes demasiado rápido.',
+                    });
+                    return;
+                }
+
+                if (typeof data.message !== 'string') {
+                    return;
+                }
+
+                const message = data.message.trim();
+
+                if (
+                    !message ||
+                    Array.from(message).length > MESSAGE_MAX_LENGTH
+                ) {
+                    send(socket, {
+                        type: 'error',
+                        message: 'El mensaje debe tener entre 1 y 500 caracteres.',
+                    });
+                    return;
+                }
+
+                try {
+                    const [result] = await pool.execute(
+                        `INSERT INTO chat_messages (user_id, message)
+                         VALUES (?, ?)`,
+                        [socket.user.id, message]
+                    );
+
+                    const [rows] = await pool.execute(
+                        `SELECT created_at
+                         FROM chat_messages
+                         WHERE id = ?
+                         LIMIT 1`,
+                        [result.insertId]
+                    );
+
+                    const outgoing = {
+                        id: String(result.insertId),
+                        username: socket.user.username,
+                        displayName: socket.user.displayName,
+                        avatarPath: socket.user.avatarPath,
+                        message,
+                        createdAt: rows[0].created_at,
+                    };
+
+                    const payload = JSON.stringify({
+                        type: 'message',
+                        message: outgoing,
+                    });
+
+                    for (const client of wss.clients) {
+                        if (
+                            client.authenticated &&
+                            client.readyState === WebSocket.OPEN
+                        ) {
+                            client.send(payload);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error guardando mensaje:', error.message);
+
+                    send(socket, {
+                        type: 'error',
+                        message: 'No se pudo guardar el mensaje.',
+                    });
+                }
+            })
+            .catch((error) => {
+                console.error('Error procesando mensaje WebSocket:', error.message);
+
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.close(1011, 'Error interno');
+                }
+            });
+    });
+
+    socket.on('error', (error) => {
+        console.error('Error WebSocket:', error.message);
+    });
+});
+
+wss.on('listening', () => {
+    console.log(`Servidor de chat escuchando en ${HOST}:${PORT}`);
+});
+
+wss.on('error', (error) => {
+    console.error('Error del servidor WebSocket:', error.message);
+});
+
+async function shutdown() {
+    console.log('Cerrando servidor de chat...');
+
+    wss.close();
+
+    for (const socket of wss.clients) {
+        socket.close(1001, 'Servidor apagándose');
+    }
+
+    await pool.end();
+    process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
